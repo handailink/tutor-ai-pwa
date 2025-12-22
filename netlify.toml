@@ -1,0 +1,20 @@
+# Netlify設定ファイル
+
+[build]
+  # ビルドコマンド
+  command = "npm run build"
+  # 公開ディレクトリ
+  publish = "dist"
+
+# SPA対応：すべてのルートをindex.htmlにリダイレクト
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 環境変数のサンプル（実際の値はNetlifyダッシュボードで設定）
+# [build.environment]
+#   VITE_SUPABASE_URL = "your-project-url"
+#   VITE_SUPABASE_ANON_KEY = "your-anon-key"
+
+

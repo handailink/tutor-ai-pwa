@@ -1,0 +1,207 @@
+# Tutor AI PWA - Cursor Rules（完成版）
+
+## プロジェクト概要
+小学生向けの家庭教師AIアプリ（PWA）。React + TypeScript + Vite で構築。
+モバイルファースト設計で、iPhone/iPad/PCに対応。
+
+## 技術スタック
+- **Frontend**: React 18, TypeScript, Vite
+- **Routing**: React Router DOM v6
+- **Styling**: 通常CSS（.css） + CSS Variables（統一。CSS Modulesは使わない）
+- **Data**: LocalStorage（将来Supabase移行予定）
+- **Markdown**: react-markdown
+- **Date**: date-fns
+
+## アーキテクチャ
+src/
+├── components/     # UIコンポーネント
+│   ├── Auth/       # 認証関連
+│   ├── Chat/       # チャット関連
+│   └── Layout/     # レイアウト関連
+├── contexts/       # React Context
+├── pages/          # ページコンポーネント
+├── repositories/   # データ永続化層（LocalStorage→将来Supabase）
+├── services/       # ビジネスロジック層（AIなど）
+├── styles/         # グローバルCSS
+├── types/          # TypeScript型定義
+└── utils/          # ユーティリティ関数
+
+## コーディング規約
+
+### TypeScript
+- 厳格な型定義を使用（`strict: true`）
+- `any`の使用は最小限に
+- 型定義（interface/type）は原則 `src/types/` に集約
+- 未使用変数は `_` プレフィックスを付ける
+
+### React
+- 関数コンポーネント + Hooks を使用
+- Propsの型は明示（`type Props = {...}` など）
+- カスタムフックは `use` プレフィックス
+- Context は `useCallback`/`useMemo` でメモ化
+- Fast Refresh対応のため、exportは一貫した形式で固定（下記参照）
+
+### CSS（見た目の方針）
+- 通常CSS（.css） + CSS Variables（`--bg-primary` 等）で統一
+- モバイルファースト（min-widthメディアクエリ）
+- タッチターゲットは最低44px
+- iOSセーフエリア対応：`env(safe-area-inset-*)`
+- 動的ビューポート対応：`100dvh`
+- インラインスタイルの多用は禁止（対応するCSSファイルに記述）
+- iPhoneの入力欄はみ出し対策として、flex要素には `min-width: 0` を適用する
+
+### 命名規則
+- コンポーネント: PascalCase（例：`ChatWindow.tsx`）
+- CSS class: kebab-case（例：`.chat-window`）
+- 変数/関数: camelCase（例：`handleSend`）
+- 定数: UPPER_SNAKE_CASE（例：`STORAGE_KEY`）
+- Repository: `XxxRepository`
+- Service: `XxxService`
+
+## Repositoryパターン（最重要）
+- UI（pages/components）から localStorage / DB を直接触らない
+- データアクセスは必ず `src/repositories/` を経由
+- ビジネスロジック（整形/解析/AI呼び出し等）は `src/services/` に置く
+- `BaseRepository` を継承してCRUDを実装する（同期/非同期は実装に合わせる）
+
+例：
+```ts
+export class XxxRepository extends BaseRepository<Xxx> {
+  protected getStorageKey(): string {
+    return 'tutor_ai_xxx';
+  }
+
+  // 公開メソッドは public で定義
+  findByUserId(userId: string): Xxx[] {
+    return super.findByUserId(userId);
+  }
+}
+ID生成
+crypto.randomUUID() は insecure context（例：iPhoneで http://192.168...）で動作しない
+
+ID生成は必ず generateId()（src/utils/id.ts）を使用すること
+
+例：
+
+ts
+コードをコピーする
+import { generateId } from '../utils/id';
+const id = generateId();
+日本語対応（小学生向け）
+UIラベルは日本語（小学生が読める表現）
+
+<textarea> / <input>（テキスト入力）には以下を付与して日本語入力を邪魔しない：
+
+lang="ja"
+
+inputMode="text"
+
+autoCapitalize="none"
+
+spellCheck={false}
+
+date-fnsのlocaleは必ずデフォルトインポート：
+
+✅ import ja from 'date-fns/locale/ja'
+
+❌ import { ja } from 'date-fns/locale/ja'
+
+レスポンシブ対応
+スマホ：デフォルト
+
+iPad（768px〜1023px）：ドロワー（Chatの左メニューはスライド）
+
+PC（1024px〜）：サイドバー固定でも可
+
+例：
+
+css
+コードをコピーする
+/* スマホ: デフォルト */
+.element { ... }
+
+/* iPad: ドロワー */
+@media (min-width: 768px) and (max-width: 1023px) { ... }
+
+/* PC: サイドバー固定 */
+@media (min-width: 1024px) { ... }
+アクセシビリティ
+aria-label を適切に設定
+
+アクティブ状態は aria-current="page" を使用
+
+アイコンは aria-hidden="true" を付ける
+
+キーボード操作（ESCで閉じる等）に対応
+
+エラーハンドリング
+try-catch で適切にエラーをキャッチ
+
+ユーザー表示は日本語で簡潔に（例：「通信に失敗しました。もう一度試してね」）
+
+console.error は開発中のみ（本番では不要なログを残さない）
+
+テスト時の注意
+iPhone Safariでキーボード表示時に入力欄が隠れないか
+
+iPadでドロワー開閉が正常か
+
+HTTP（insecure context）でもID生成が動くか（generateIdの確認）
+
+Supabase移行（今後の前提ルール）
+UI（pages/components）から supabase クライアントを直接呼ぶのは禁止
+
+データアクセスは必ず repositories/ または services/ 経由
+
+Supabase版Repositoryに差し替えるため、Repositoryの公開メソッド名/戻り値の形は極力維持
+
+Supabase移行後はRepositoryが非同期（async）になる前提で、UI側は await できる設計にする
+
+RLS（Row Level Security）前提：ユーザーは自分のデータしか読めない/書けない
+
+環境変数（フロントのルール）
+Vite環境変数は必ず VITE_ プレフィックス
+
+Gemini等の秘密鍵・APIキーをフロントに直置き禁止
+
+必ずサーバー/Edge Function（例：Supabase Edge Functions）経由にする
+
+## Supabase 設定
+
+### 環境変数
+- `VITE_SUPABASE_URL`: Supabase プロジェクト URL
+- `VITE_SUPABASE_ANON_KEY`: anon/public キー（※ service_role は絶対に使わない）
+- `VITE_SUPABASE_BUCKET`: Storage バケット名（任意）
+
+### ファイル構成
+- `.env.example`: 雛形（git管理する）
+- `.env.local`: 実際の値（git管理しない）
+- `src/lib/supabase.ts`: Supabaseクライアント初期化
+
+### 使用ルール
+- Supabaseクライアントは `src/lib/supabase.ts` 経由でのみ使用
+- UI層から直接 supabase を呼ばない（Repository/Service 経由）
+- 環境変数は `import.meta.env.VITE_*` で参照
+- 未設定時は `isSupabaseConfigured()` でチェック可能
+
+Fast Refresh安定化ルール
+Contextファイルのexportは常に固定（条件分岐でexportしない）
+
+useAuth 等のHookは export const useAuth = () => { ... } 形式で固定
+
+default export と named export の混在を避ける（特にContext/Hook）
+
+禁止事項
+crypto.randomUUID() の直接使用
+
+import { ja } from 'date-fns/locale/ja'（named importはNG）
+
+BaseRepositoryのprotectedメソッドを外部から直接呼ぶ
+
+未使用のimport/変数の放置
+
+インラインスタイルの多用（通常CSSに書く）
+
+UIから localStorage / DB / supabase を直接触る実装
+
+APIキーをフロントに埋め込む実装

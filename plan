@@ -1,0 +1,410 @@
+あなたはプロダクトエンジニアです。家庭教師×AIの学習PWA（React + Vite）フロントエンドを作ってください。主な利用端末は **iPhone/iPad（モバイルファースト）で、PCは二次です。目的は「生徒が教科ごとにAIに質問し、宿題・テスト結果・学習ログを蓄積し、保護者に進捗を見せられる」ことです。UIはChatGPT寄せ（読みやすい文字階層・余白・見出し）**でダークテーマ。現段階はSupabase/Gemini未接続なので、localStorage永続化 + AI応答モックで実装し、後で差し替えやすい構造にしてください。
+
+0) MVPのゴール（重要）
+
+主要画面が揃い、入力→保存→再表示ができる（リロードしても残る）
+
+チャットは「教科フォルダ（プロジェクト）」「会話履歴（スレッド）」を持ち、切替が確実に動く
+
+チャット入力は テキスト + 画像アップロード + カメラ撮影 + 音声入力UI を搭載
+
+宿題管理・テスト結果記録・保護者進捗は「UI＋データ保存」まで。高度分析はモックでOK
+
+1) 技術要件
+
+React + Vite
+
+TypeScript（可能なら）
+
+React Router
+
+スタイリング：Tailwind もしくは CSS Modules（どちらかに統一）
+
+PWA土台（manifest + アイコン + theme-color、可能なら簡易SW）
+
+永続化：localStorage（後でSupabaseへ差し替えやすいよう repository 層を作る）
+
+Markdown表示（見出しh1/h2/h3、箇条書き、太字、コード）。数式は後対応でOK（壊れない表示にする）
+
+AI呼び出し部分は service に分離（現状はモック応答）
+
+2) ルーティング / ナビ（モバイル最優先）
+
+/login：ログインUI（モック認証）
+
+/app：アプリ本体（下タブナビ）
+
+下タブ：Chat / Homework / Tests / Parent
+
+重要：モバイルで使いやすいよう、タッチ領域は最小44px、本文の基本フォントは16〜18px相当、行間広め
+
+iOSキーボード表示時に入力欄が潰れない（safe-area対応、スクロール領域分離、composerはsticky/固定で安定）
+
+3) Auth画面（/login）必須（UIは作る。認証はモックでOK）
+
+メール/パスワード入力
+
+ログイン/新規登録UI（同画面で切替可）
+
+モック：入力メールを localStorage に保存してログイン状態とみなす
+
+ログイン後 /app/chat へ遷移
+
+4) Chat画面（/app/chat）必須
+レイアウト
+
+モバイル：メインはチャット本文。左サイドバーは スライドインのドロワー（ハンバーガーで開閉）
+
+iPad：2カラムでもOK（左サイドバー固定表示を許可）。iPhone幅は必ずドロワー方式
+
+画面上部：タイトル（現在の教科/スレッド）＋ハンバーガー
+
+メイン：チャット本文（ChatGPT寄せ：最大幅制御、余白、読みやすいタイポグラフィ）
+
+下部：Composer（入力欄）
+
+左サイドバー（スライドドロワー）の要件
+
+プロジェクト（教科フォルダ）一覧
+
+初期プロジェクト：国語/数学/英語（初回のみ自動生成）
+
+プロジェクト追加（任意の教科を追加できる）
+
+スレッド（会話履歴）一覧：選択プロジェクト内のみ表示
+
+「新しいチャット」でスレッド作成
+
+検索ボックス：スレッドタイトル＋メッセージ本文で検索し絞り込み
+
+スレッド切替で、メインの会話内容が必ず切り替わること
+
+チャット本文の要件
+
+user / assistant の見た目を分ける（左右・背景・アイコンなど）
+
+文字階層：本文16-18px、見出しは明確に大きく、箇条書きが読みやすい
+
+1メッセージをカードで囲いすぎない（読み物として自然な余白で区切る）
+
+新着で最下部へ自動スクロール
+
+Composer（下固定）の要件（必須）
+
+テキスト入力 + 送信
+
+画像アップロード（ファイル選択→プレビュー→送信）
+
+カメラ撮影ボタン（必須）
+
+基本実装：<input type="file" accept="image/*" capture="environment"> を使い「その場で撮って添付」を確実に動かす
+
+可能なら getUserMedia を使った撮影UI（プレビュー→シャッター→添付）も用意
+
+音声入力ボタン（必須）
+
+Web Speech API（SpeechRecognition）が使える場合：音声→テキストを入力欄へ反映
+
+使えない場合：録音中/停止など状態表示のUIだけでも成立（後で差し替え）
+
+添付は送信時にメッセージに紐づく（metaに source: upload/camera/voice を入れる）
+
+AI応答（モック）
+
+user送信 → userメッセージ保存
+
+0.5〜1秒後に assistant の固定テンプレ返信を自動追加
+
+後でGemini接続するため aiService を分離
+
+5) Homework画面（/app/homework）必須
+
+目的：宿題の出題＆管理（MVPはCRUD＋状態）
+
+宿題一覧（未完了/完了）
+
+宿題作成：
+
+教科（projectId）
+
+タイトル
+
+期限
+
+詳細
+
+添付（画像/撮影）
+
+状態更新（todo/done）
+
+タップで詳細表示（画面 or モーダル）
+
+6) Tests画面（/app/tests）必須
+
+目的：テスト結果スキャン＆データ管理（MVPは登録＋閲覧）
+
+テスト結果一覧（教科・日付・点数）
+
+新規登録：
+
+教科（projectId）
+
+実施日
+
+点数（score、任意でmaxScore）
+
+タグ（例：一次関数/関係代名詞）
+
+スキャン画像添付（アップロード/撮影）
+
+詳細表示
+
+“分析”はモックでOK：弱点候補・次回アクションをテンプレ表示（将来はチャットログ＋成績から分析予定）
+
+7) Parent画面（/app/parent）必須
+
+目的：保護者向け進捗確認（MVPは可視化UI）
+
+今週のサマリー（localStorageのデータから算出できる範囲で）
+
+宿題：未/完了数
+
+テスト：最新スコア
+
+学習量：チャットメッセージ数、学習日数
+
+“先生コメント/AIコメント”欄（モック）
+
+将来共有のため「共有リンク/PDF出力」ボタンはUIだけ置いてよい（未実装可）
+
+8) データモデル（localStorage永続化 / 後でSupabaseに移行しやすい）
+
+必ず userId を持ち、生徒ごとに分離できる形にする。
+
+User: { id, email, createdAt }
+
+Project: { id, name, createdAt }
+
+Thread: { id, userId, projectId, title, createdAt, updatedAt }
+
+Message:
+{
+id,
+userId,
+threadId,
+role: "user" | "assistant",
+content,
+createdAt,
+tags?: string[],
+attachments?: [{ id, type:"image", urlOrData, name? }],
+meta?: { source:"text"|"voice"|"camera"|"upload" }
+}
+
+Homework:
+{ id, userId, projectId, title, detail, dueAt, status:"todo"|"done", attachments?, createdAt, updatedAt }
+
+TestResult:
+{ id, userId, projectId, takenAt, score, maxScore?, tags?:string, attachments?, createdAt, updatedAt }
+
+挙動：
+
+初回ログイン時、projectsが空なら国語/数学/英語を自動作成
+
+新規スレッドのタイトルは最初のユーザーメッセージから自動生成（先頭20文字など）
+
+スレッド切替で会話が必ず切り替わる
+
+検索が動く
+
+9) 実装上のお願い
+
+コンポーネント分割：BottomTabs / DrawerSidebar / ProjectList / ThreadList / ChatWindow / Composer / Auth / Homework / Tests / Parent
+
+repository層（localStorage版）を作る（UIからlocalStorage直アクセス禁止）
+
+service層（aiServiceなど）を作る
+
+READMEに起動方法、機能一覧、今後Supabaseに差し替える前提を書く
+
+まず「動くUI＋保存＋モック応答」を完成させてください。
+
+ボルト入力の条件があったので、直接カーソルのAIにこのプロンプトを送ることにします。
+
+了解。CursorのAIに投げるなら、**長文のまま貼ると「一部無視」「実装が散る」**が起きやすいから、同じ内容を **“Cursor向けの実装指示書”**に圧縮して渡すね。
+（このまま1発で貼ってOK）
+
+Cursorに送るプロンプト（最終版：モバイル最優先・下タブ・チャットだけドロワー）
+
+あなたはプロダクトエンジニアです。家庭教師×AIの学習PWAを React + Vite で新規に作ってください。主要端末は iPhone/iPad（モバイルファースト）。UIは ChatGPT寄せ（読みやすい文字階層・余白・見出し）のダークテーマ。現段階はSupabase/Gemini未接続なので、localStorage永続化 + AI応答モックで動くMVPを完成させてください。後でSupabaseに差し替えやすいよう、repository層とservice層を必ず分離し、UIからlocalStorageを直接触らないでください。
+
+必須機能（MVP）
+1) ルーティング
+
+/login：ログイン/新規登録UI（モック認証でOK）
+
+/app/*：アプリ本体
+
+下タブ：Chat / Homework / Tests / Parent
+
+2) Auth（モックでOK）
+
+メール/パスワード入力UI
+
+ログイン/登録切替
+
+ログイン後 /app/chat
+
+モック：入力メールをlocalStorageに保存してログイン状態にする（User {id,email}）
+
+3) Chat（/app/chat）
+
+モバイル：左サイドバーはスライドドロワー（ハンバーガーで開閉）
+iPadでは2カラム表示OK。ただしiPhone幅は必ずドロワー。
+
+左サイドバー（ドロワー）：
+
+プロジェクト（教科）一覧：初期「国語/数学/英語」を初回ログイン時に自動生成
+
+プロジェクト追加
+
+スレッド（会話）一覧（選択プロジェクト内）
+
+新しいチャット（スレッド作成）
+
+検索（タイトル＋本文で絞り込み）
+
+メイン：チャット表示
+
+user/assistantで左右分け
+
+本文 16〜18px相当、見出しは明確に大きく、行間広め
+
+1メッセージをカードで囲いすぎず、自然な余白で区切る
+
+Markdownレンダリング（h1/h2/h3、箇条書き、太字、コード）
+
+新着で自動スクロール
+
+入力（composer 下固定）：
+
+テキスト送信
+
+画像アップロード（プレビュー→送信）
+
+カメラ撮影ボタン（必須）：まず確実な方法で実装
+<input type="file" accept="image/*" capture="environment"> を使い「その場で撮って添付して送信」
+（可能なら getUserMedia の撮影UIも追加）
+
+音声入力ボタン（必須）：
+Web Speech APIが使える環境は音声→テキスト、使えない場合はUI＋状態表示だけでもOK（後で差し替え前提）
+
+AI応答はモック：
+
+user送信→保存
+
+0.5〜1秒後にassistantの固定テンプレ返信を自動追加
+
+AI呼び出しは aiService に分離
+
+4) Homework（/app/homework）
+
+宿題CRUD＋状態管理（todo/done）
+
+作成：教科(projectId)、タイトル、期限、詳細、画像添付（アップロード/撮影）
+
+一覧：未完了/完了
+
+完了切替
+
+詳細表示（画面 or モーダル）
+
+5) Tests（/app/tests）
+
+テスト結果の登録＋閲覧（分析はモックでOK）
+
+作成：教科(projectId)、実施日、score、任意maxScore、タグ（例：一次関数）、スキャン画像添付（アップロード/撮影）
+
+一覧：教科/日付/点数
+
+詳細：画像とメモ
+
+分析タブ（モック）：弱点候補・次回アクションをテンプレ表示
+
+6) Parent（/app/parent）
+
+保護者向け進捗の可視化（MVPは算出＋表示）
+
+今週サマリー：
+
+宿題：未/完了数
+
+テスト：最新スコア
+
+学習量：チャットメッセージ数、学習日数（ローカルデータから算出）
+
+先生コメント/AIコメント欄（モック）
+
+共有リンク/PDF出力ボタンはUIだけでも可
+
+データモデル（localStorage永続化、必ず userId で分離）
+
+後でSupabaseに移行する前提の形にする。
+
+User: { id, email, createdAt }
+
+Project: { id, name, createdAt }
+
+Thread: { id, userId, projectId, title, createdAt, updatedAt }
+
+Message:
+{ id, userId, threadId, role:"user"|"assistant", content, createdAt,
+tags?:string, attachments?:[{id,type:"image",urlOrData,name?}],
+meta?:{source:"text"|"voice"|"camera"|"upload"} }
+
+Homework:
+{ id, userId, projectId, title, detail, dueAt, status:"todo"|"done",
+attachments?, createdAt, updatedAt }
+
+TestResult:
+{ id, userId, projectId, takenAt, score, maxScore?, tags?:string,
+attachments?, createdAt, updatedAt }
+
+挙動：
+
+初回ログイン時、projectsが空なら国語/数学/英語を自動生成
+
+新規スレッド作成時、最初のuserメッセージからタイトル自動生成（先頭20文字など）
+
+スレッド切替で内容が必ず変わる
+
+検索が動く
+
+添付はメッセージ/宿題/テストに紐づける
+
+実装方針（必須）
+
+コンポーネント分割：BottomTabs / DrawerSidebar / ProjectList / ThreadList / ChatWindow / Composer / Auth / Homework / Tests / Parent
+
+Repository層（localStorage）とService層（aiService）を作り、UIと分離
+
+iOSのキーボードで入力欄が隠れない（safe-area、sticky、スクロール領域分離）
+
+タッチ領域は44px以上
+
+READMEに起動方法・機能一覧を書く
+
+まず「動くUI＋保存＋モック応答」まで完成させてください。コードベースを整え、後でSupabaseに差し替えやすくしてください。
+
+追加で、失敗しない進め方（Cursor内AIへの小分け指示）
+
+もしCursorが一発で崩す場合は、次の順で段階的にやらせて：
+
+Vite+React+TS+Router+レイアウト（下タブ）だけ
+
+Chat画面＋ドロワー＋モックデータ（local state）
+
+repository導入してlocalStorage永続化
+
+Homework/Tests/Parentを順に追加
+
+添付（upload/camera）→音声UI

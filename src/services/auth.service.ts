@@ -1,0 +1,115 @@
+import { UserRepository } from '../repositories';
+import { User } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
+const CURRENT_USER_KEY = 'tutor_ai_current_user';
+
+export class AuthService {
+  private userRepository: UserRepository;
+
+  constructor() {
+    this.userRepository = new UserRepository();
+  }
+
+  async login(email: string, password: string): Promise<User> {
+    // Supabase Auth を使用
+    if (isSupabaseConfigured() && supabase) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        // Supabase にユーザーがいない場合は登録を試みる
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('メールアドレスまたはパスワードが正しくありません');
+        }
+        throw new Error(error.message);
+      }
+
+      if (data.user) {
+        // ローカルのUserRepositoryにも保存
+        let localUser = this.userRepository.findByEmail(email);
+        if (!localUser) {
+          localUser = this.userRepository.createUserWithId(data.user.id, email);
+        }
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localUser));
+        return localUser;
+      }
+    }
+
+    // フォールバック：モック認証
+    let user = this.userRepository.findByEmail(email);
+    if (!user) {
+      user = this.userRepository.createUser(email);
+    }
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+    return user;
+  }
+
+  async register(email: string, password: string): Promise<User> {
+    // Supabase Auth を使用
+    if (isSupabaseConfigured() && supabase) {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) {
+        if (error.message.includes('already registered')) {
+          throw new Error('このメールアドレスは既に登録されています');
+        }
+        throw new Error(error.message);
+      }
+
+      if (data.user) {
+        // ローカルのUserRepositoryにも保存
+        const localUser = this.userRepository.createUserWithId(data.user.id, email);
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localUser));
+        return localUser;
+      }
+    }
+
+    // フォールバック：モック認証
+    const existingUser = this.userRepository.findByEmail(email);
+    if (existingUser) {
+      throw new Error('このメールアドレスは既に登録されています');
+    }
+    const user = this.userRepository.createUser(email);
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+    return user;
+  }
+
+  getCurrentUser(): User | null {
+    const data = localStorage.getItem(CURRENT_USER_KEY);
+    return data ? JSON.parse(data) : null;
+  }
+
+  async logout(): Promise<void> {
+    if (isSupabaseConfigured() && supabase) {
+      await supabase.auth.signOut();
+    }
+    localStorage.removeItem(CURRENT_USER_KEY);
+  }
+
+  isAuthenticated(): boolean {
+    return this.getCurrentUser() !== null;
+  }
+
+  // Supabase Auth のセッションを復元
+  async restoreSession(): Promise<User | null> {
+    if (isSupabaseConfigured() && supabase) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        let localUser = this.userRepository.findByEmail(session.user.email || '');
+        if (!localUser) {
+          localUser = this.userRepository.createUserWithId(session.user.id, session.user.email || '');
+        }
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localUser));
+        return localUser;
+      }
+    }
+    return this.getCurrentUser();
+  }
+}
+
