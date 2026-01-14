@@ -76,7 +76,7 @@ export class MessageRepository extends SupabaseBaseRepository<Message> {
 
   async searchByContent(userId: string, query: string): Promise<Message[]> {
     const lowerQuery = query.toLowerCase();
-    
+
     if (isSupabaseConfigured() && supabase) {
       // Supabaseでの検索（ilike使用）
       const { data, error } = await supabase

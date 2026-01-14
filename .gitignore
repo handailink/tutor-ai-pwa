@@ -32,3 +32,17 @@ dist-ssr
 
 # Local Netlify folder
 .netlify
+
+# Firebase local cache
+.firebase/
+
+# Supabase local temp
+supabase/.temp/
+
+# Generated folders/files (local only)
+tutor-ai-pwa@0.0.0/
+vite/
+public/index.html
+
+# Misplaced workflow folder created by mistake
+src/repositories/.github/

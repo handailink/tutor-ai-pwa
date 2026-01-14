@@ -43,8 +43,17 @@ export const Chat: React.FC = () => {
 
   const loadThreads = useCallback(async () => {
     if (!user || !selectedProjectId) return;
+
+    // 直近が先頭に来る想定（リポジトリ側で order している前提）
     const projectThreads = await threadRepository.findByUserIdAndProjectId(user.id, selectedProjectId);
     setThreads(projectThreads);
+
+    // selectedThreadId を依存配列に入れると、setSelectedThreadId -> loadThreads再生成 -> useEffect発火
+    // で無限に threads を再取得し続けることがある。
+    // そのため functional update で「未選択なら1回だけ」自動選択する。
+    if (projectThreads.length > 0) {
+      setSelectedThreadId((prev) => prev ?? projectThreads[0].id);
+    }
   }, [user, selectedProjectId, threadRepository]);
 
   const loadMessages = useCallback(async () => {
@@ -89,14 +98,13 @@ export const Chat: React.FC = () => {
     }
     const title = '新しいチャット';
     const newThread = await threadRepository.createThread(user.id, selectedProjectId, title);
-    setThreads([newThread, ...threads]);
+    setThreads((prev) => [newThread, ...prev]);
     setSelectedThreadId(newThread.id);
   };
 
   const handleSelectProject = (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedThreadId(null);
-    setMessages([]);
   };
 
   const handleSelectThread = (threadId: string) => {
@@ -125,7 +133,7 @@ export const Chat: React.FC = () => {
         console.log('[Chat] 新しいスレッドを作成します');
         const title = await aiService.generateThreadTitle(content);
         const newThread = await threadRepository.createThread(user.id, selectedProjectId, title);
-        setThreads([newThread, ...threads]);
+        setThreads((prev) => [newThread, ...prev]);
         threadId = newThread.id;
         setSelectedThreadId(threadId);
       }
@@ -154,10 +162,18 @@ export const Chat: React.FC = () => {
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
 
-      console.log('[Chat] AI応答を生成します（モック）');
-      
-      // AI応答を生成（モック実装）
-      const aiResponse = await aiService.generateResponse(content);
+      // AI応答を生成（Supabase Edge Function）
+      const projectName = projects.find((p) => p.id === selectedProjectId)?.name || 'Link';
+
+      const chatMessages = [...messages, userMessage]
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
+
+      console.log('[Chat] AI応答を生成します（Edge Function）');
+      const aiResponse = await aiService.generateResponseFromMessages(chatMessages, projectName);
       console.log('[Chat] AI応答を受信:', aiResponse);
       
       const assistantMessage: Message = {
@@ -176,6 +192,11 @@ export const Chat: React.FC = () => {
       await threadRepository.updateThread(threadId, {
         updatedAt: new Date().toISOString(),
       } as Partial<Thread>);
+
+      // 送信完了後にDBから再取得して同期（新規スレッド作成直後のloadMessagesタイミングで
+      // 一時的に空配列がセットされ、ユーザーの最初の発言が消えたように見える症状を防ぐ）
+      const synced = await messageRepository.findByThreadId(threadId);
+      setMessages(synced);
     } catch (error: any) {
       console.error('[Chat] メッセージ送信エラー:', error);
       console.error('[Chat] エラー詳細:', error.message, error.stack);
