@@ -1,21 +1,60 @@
+import { supabase } from '../lib/supabase';
+
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
+
 export class AIService {
   /**
-   * AI応答を生成（モック実装）
+   * AI応答を生成（Supabase Edge Function /functions/v1/chat を呼び出す）
    * @param userMessage ユーザーのメッセージ
+   * @param projectName 任意：プロジェクト名（プロンプトに渡す用途）
    * @returns AI応答テキスト
    */
-  async generateResponse(userMessage: string): Promise<string> {
-    // モック応答：0.5-1秒後に固定テンプレートを返す
-    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500));
+  async generateResponse(userMessage: string, projectName: string = 'Link'): Promise<string> {
+    const messages: ChatMessage[] = [{ role: 'user', content: userMessage }];
+    return this.generateResponseFromMessages(messages, projectName);
+  }
 
-    const responses = [
-      `なるほど、「${userMessage}」について理解しました。\n\nこの問題を解くには、まず基本的な概念を確認しましょう。一緒に考えていきましょう！`,
-      `良い質問ですね！「${userMessage}」に関して、以下のポイントを押さえることが重要です：\n\n1. 基礎をしっかり理解する\n2. 練習問題を解く\n3. 間違いを振り返る\n\n一歩ずつ進めていきましょう。`,
-      `了解しました。「${userMessage}」について説明しますね。\n\nこの内容は重要なポイントなので、一緒に確認していきましょう。まずは基本から始めます。`,
-      `その通りです！「${userMessage}」を理解するために、具体例を見てみましょう。\n\n例えば、日常生活の中でも同じような考え方が使えますよ。`,
-    ];
+  /**
+   * 既存の会話メッセージ配列からAI応答を生成
+   * @param messages Chat Completions形式のmessages
+   * @param projectName 任意：プロジェクト名
+   */
+  async generateResponseFromMessages(messages: ChatMessage[], projectName: string = 'Link'): Promise<string> {
+    // 簡易バリデーション
+    const trimmed = (messages ?? [])
+      .filter((m) => m && typeof m.content === 'string' && m.content.trim().length > 0)
+      .slice(-20) // 念のため上限
+      .map((m) => ({ role: m.role, content: m.content.trim() }));
 
-    return responses[Math.floor(Math.random() * responses.length)];
+    if (trimmed.length === 0) {
+      throw new Error('メッセージが空です');
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase is not configured. Check VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in your env.');
+    }
+
+    const { data, error } = await supabase.functions.invoke('chat', {
+      body: {
+        messages: trimmed,
+        projectName,
+      },
+    });
+
+    if (error) {
+      // supabase-js の FunctionsError は message を持つ
+      throw new Error(error.message || 'AIの呼び出しに失敗しました');
+    }
+
+    const message = (data as any)?.message;
+    if (!message || typeof message !== 'string') {
+      throw new Error('AIの応答形式が不正です');
+    }
+
+    return message;
   }
 
   /**
@@ -29,4 +68,3 @@ export class AIService {
     return title || '新しいチャット';
   }
 }
-
