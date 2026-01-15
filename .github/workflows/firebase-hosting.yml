@@ -19,10 +19,15 @@ jobs:
       - name: Create env for Vite
         run: |
           cat > .env.production.local <<EOF
-VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
-VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
-VITE_SUPABASE_BUCKET=${{ secrets.VITE_SUPABASE_BUCKET }}
-EOF
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_BUCKET=${{ secrets.VITE_SUPABASE_BUCKET }}
+          EOF
+
+      - name: Verify Vite env file (keys only)
+        run: |
+          echo "--- .env.production.local (keys only) ---"
+          node -e "const fs=require('fs'); const s=fs.readFileSync('.env.production.local','utf8'); console.log(s.split(/\\r?\\n/).filter(l=>l.trim()).map(l=>l.replace(/=.*/, '=[set]')).join('\\n'));"
 
       - run: npm run build
 
