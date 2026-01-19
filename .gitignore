@@ -45,4 +45,5 @@ vite/
 public/index.html
 
 # Misplaced workflow folder created by mistake
-src/repositories/.github/
+src/repositories/.github/.env.local.bak
+supabase/.temp/
