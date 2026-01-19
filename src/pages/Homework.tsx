@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import ja from 'date-fns/locale/ja';
 import { useAuth } from '../contexts/AuthContext';
@@ -55,7 +56,8 @@ const serializeHomeworkDetail = (description: string, todos: TodoItem[]) => {
 };
 
 export const Homework: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [homeworks, setHomeworks] = useState<HomeworkType[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -122,6 +124,16 @@ export const Homework: React.FC = () => {
   const handleOpenCreate = () => {
     resetForm();
     setIsFormOpen(true);
+  };
+
+  const handleLogout = async () => {
+    if (!window.confirm('ログアウトしますか？')) return;
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      alert('ログアウトに失敗しました。もう一度試してね');
+    }
   };
 
   const handleEdit = (homework: HomeworkType) => {
@@ -199,33 +211,6 @@ export const Homework: React.FC = () => {
       await homeworkRepository.updateHomework(homework.id, {
         detail: nextDetail,
         status: nextStatus,
-      } as Partial<HomeworkType>);
-    } catch (error) {
-      alert('チェックの更新に失敗しました。');
-      loadHomeworks();
-    }
-  };
-
-  const handleToggleHomeworkStatus = async (homework: HomeworkType) => {
-    const detail = parseHomeworkDetail(homework.detail);
-    const nextStatus: HomeworkType['status'] =
-      homework.status === 'done' ? 'todo' : 'done';
-    const nextTodos =
-      detail.todos.length > 0
-        ? detail.todos.map((todo) => ({ ...todo, done: nextStatus === 'done' }))
-        : detail.todos;
-    const nextDetail =
-      detail.todos.length > 0
-        ? serializeHomeworkDetail(detail.description, nextTodos)
-        : homework.detail;
-    const optimistic = homeworks.map((hw) =>
-      hw.id === homework.id ? { ...hw, status: nextStatus, detail: nextDetail } : hw
-    );
-    setHomeworks(optimistic);
-    try {
-      await homeworkRepository.updateHomework(homework.id, {
-        status: nextStatus,
-        detail: nextDetail,
       } as Partial<HomeworkType>);
     } catch (error) {
       alert('チェックの更新に失敗しました。');
@@ -323,9 +308,14 @@ export const Homework: React.FC = () => {
       <header className="homework-header">
         <div className="homework-header-row">
           <h1 className="homework-title">宿題管理</h1>
-          <button className="homework-add-button" onClick={handleOpenCreate}>
-            ＋宿題を追加
-          </button>
+          <div className="homework-header-actions">
+            <button className="homework-add-button" onClick={handleOpenCreate}>
+              ＋宿題を追加
+            </button>
+            <button type="button" className="homework-logout-button" onClick={handleLogout}>
+              ログアウト
+            </button>
+          </div>
         </div>
       </header>
 
@@ -505,15 +495,6 @@ export const Homework: React.FC = () => {
                           <span className="homework-project-tag">{project?.name || '未設定'}</span>
                         </div>
                         <div className="homework-card-actions">
-                          <label className="homework-card-check">
-                            <input
-                              type="checkbox"
-                              checked={homework.status === 'done'}
-                              onChange={() => handleToggleHomeworkStatus(homework)}
-                              aria-label="宿題を完了にする"
-                            />
-                            <span>完了</span>
-                          </label>
                           <button
                             className="homework-edit-button"
                             onClick={() => handleEdit(homework)}

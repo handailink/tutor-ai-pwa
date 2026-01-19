@@ -9,6 +9,15 @@ export class TestSetRepository {
   // ========== TestSet CRUD ==========
 
   async findByUserId(userId: string): Promise<TestSetWithScores[]> {
+    const localSets = this.getLocalSets().filter(s => s.userId === userId);
+    const localScores = this.getLocalScores();
+    const localResult = localSets
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map(set => ({
+        ...set,
+        scores: localScores.filter(s => s.testSetId === set.id),
+      }));
+
     if (isSupabaseConfigured() && supabase) {
       const { data: sets, error } = await supabase
         .from('test_sets')
@@ -18,7 +27,11 @@ export class TestSetRepository {
 
       if (error) {
         console.error('Error fetching test_sets:', error);
-        return [];
+        return localResult;
+      }
+
+      if (!sets || sets.length === 0) {
+        return localResult;
       }
 
       // 各セットのスコアを取得
@@ -56,15 +69,7 @@ export class TestSetRepository {
     }
 
     // LocalStorageフォールバック
-    const sets = this.getLocalSets().filter(s => s.userId === userId);
-    const scores = this.getLocalScores();
-    
-    return sets
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .map(set => ({
-        ...set,
-        scores: scores.filter(s => s.testSetId === set.id),
-      }));
+    return localResult;
   }
 
   async findById(id: string): Promise<TestSetWithScores | null> {
@@ -132,65 +137,209 @@ export class TestSetRepository {
     const now = new Date().toISOString();
 
     if (isSupabaseConfigured() && supabase) {
-      // テストセット作成
-      const { data: set, error: setError } = await supabase
-        .from('test_sets')
-        .insert({
-          user_id: userId,
-          date: data.date,
-          name: data.name,
-          grade: data.grade,
-          memo: data.memo,
-        })
-        .select()
-        .single();
+      try {
+        // テストセット作成
+        const { data: set, error: setError } = await supabase
+          .from('test_sets')
+          .insert({
+            user_id: userId,
+            date: data.date,
+            name: data.name,
+            grade: data.grade,
+            memo: data.memo,
+          })
+          .select()
+          .single();
 
-      if (setError || !set) {
-        throw new Error(`テストセットの保存に失敗しました: ${setError?.message}`);
-      }
+        if (setError || !set) {
+          throw new Error(`テストセットの保存に失敗しました: ${setError?.message}`);
+        }
 
-      // スコア作成
-      const scoreInserts = scores.map(s => ({
-        test_set_id: set.id,
-        subject: s.subject,
-        score: s.score,
-        average: s.average,
-        max_score: s.maxScore ?? 100,
-      }));
-
-      const { data: insertedScores, error: scoresError } = await supabase
-        .from('test_scores')
-        .insert(scoreInserts)
-        .select();
-
-      if (scoresError) {
-        console.error('Error inserting scores:', scoresError);
-      }
-
-      return {
-        id: set.id,
-        userId: set.user_id,
-        date: set.date,
-        name: set.name,
-        grade: set.grade,
-        memo: set.memo,
-        createdAt: set.created_at,
-        updatedAt: set.updated_at,
-        scores: (insertedScores || []).map(s => ({
-          id: s.id,
-          testSetId: s.test_set_id,
+        // スコア作成
+        const scoreInserts = scores.map(s => ({
+          test_set_id: set.id,
           subject: s.subject,
           score: s.score,
           average: s.average,
-          maxScore: s.max_score,
-          rank: s.rank,
-          deviation: s.deviation,
-          createdAt: s.created_at,
-        })),
-      };
+          max_score: s.maxScore ?? 100,
+        }));
+
+        const { data: insertedScores, error: scoresError } = await supabase
+          .from('test_scores')
+          .insert(scoreInserts)
+          .select();
+
+        if (scoresError) {
+          throw new Error(`テストの点数保存に失敗しました: ${scoresError.message}`);
+        }
+
+        return {
+          id: set.id,
+          userId: set.user_id,
+          date: set.date,
+          name: set.name,
+          grade: set.grade,
+          memo: set.memo,
+          createdAt: set.created_at,
+          updatedAt: set.updated_at,
+          scores: (insertedScores || []).map(s => ({
+            id: s.id,
+            testSetId: s.test_set_id,
+            subject: s.subject,
+            score: s.score,
+            average: s.average,
+            maxScore: s.max_score,
+            rank: s.rank,
+            deviation: s.deviation,
+            createdAt: s.created_at,
+          })),
+        };
+      } catch (error) {
+        console.error('Error creating test_sets:', error);
+        // フォールバック
+        return this.createTestSetLocal(userId, data, scores, now);
+      }
     }
 
     // LocalStorageフォールバック
+    return this.createTestSetLocal(userId, data, scores, now);
+  }
+
+  async updateTestSet(
+    id: string,
+    data: {
+      date: string;
+      name: string;
+      grade?: string;
+      memo?: string;
+    },
+    scores: Array<{
+      subject: string;
+      score: number;
+      average?: number;
+      maxScore?: number;
+    }>
+  ): Promise<TestSetWithScores | null> {
+    const now = new Date().toISOString();
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        // テストセット更新
+        const { data: set, error: setError } = await supabase
+          .from('test_sets')
+          .update({
+            date: data.date,
+            name: data.name,
+            grade: data.grade,
+            memo: data.memo,
+            updated_at: now,
+          })
+          .eq('id', id)
+          .select()
+          .single();
+
+        if (setError || !set) {
+          throw new Error(`テストセットの更新に失敗しました: ${setError?.message}`);
+        }
+
+        // 既存スコアを削除して再作成
+        const { error: deleteError } = await supabase
+          .from('test_scores')
+          .delete()
+          .eq('test_set_id', id);
+
+        if (deleteError) {
+          throw new Error(`既存点数の削除に失敗しました: ${deleteError.message}`);
+        }
+
+        const scoreInserts = scores.map(s => ({
+          test_set_id: id,
+          subject: s.subject,
+          score: s.score,
+          average: s.average,
+          max_score: s.maxScore ?? 100,
+        }));
+
+        const { data: insertedScores, error: scoresError } = await supabase
+          .from('test_scores')
+          .insert(scoreInserts)
+          .select();
+
+        if (scoresError) {
+          throw new Error(`点数の更新に失敗しました: ${scoresError.message}`);
+        }
+
+        return {
+          id: set.id,
+          userId: set.user_id,
+          date: set.date,
+          name: set.name,
+          grade: set.grade,
+          memo: set.memo,
+          createdAt: set.created_at,
+          updatedAt: set.updated_at,
+          scores: (insertedScores || []).map(s => ({
+            id: s.id,
+            testSetId: s.test_set_id,
+            subject: s.subject,
+            score: s.score,
+            average: s.average,
+            maxScore: s.max_score,
+            rank: s.rank,
+            deviation: s.deviation,
+            createdAt: s.created_at,
+          })),
+        };
+      } catch (error) {
+        console.error('Error updating test_sets:', error);
+        // フォールバック
+        return this.updateTestSetLocal(id, data, scores, now);
+      }
+    }
+
+    // LocalStorageフォールバック
+    return this.updateTestSetLocal(id, data, scores, now);
+  }
+
+  async deleteTestSet(id: string): Promise<void> {
+    if (isSupabaseConfigured() && supabase) {
+      // スコアはCASCADEで自動削除される
+      const { error } = await supabase
+        .from('test_sets')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(`削除に失敗しました: ${error.message}`);
+      }
+      return;
+    }
+
+    // LocalStorageフォールバック
+    const sets = this.getLocalSets().filter(s => s.id !== id);
+    this.saveLocalSets(sets);
+
+    const scores = this.getLocalScores().filter(s => s.testSetId !== id);
+    this.saveLocalScores(scores);
+  }
+
+  // ========== LocalStorage Helpers ==========
+  private createTestSetLocal(
+    userId: string,
+    data: {
+      date: string;
+      name: string;
+      grade?: string;
+      memo?: string;
+    },
+    scores: Array<{
+      subject: string;
+      score: number;
+      average?: number;
+      maxScore?: number;
+    }>,
+    now: string
+  ): TestSetWithScores {
     const setId = generateId();
     const newSet: TestSet = {
       id: setId,
@@ -223,7 +372,7 @@ export class TestSetRepository {
     return { ...newSet, scores: newScores };
   }
 
-  async updateTestSet(
+  private updateTestSetLocal(
     id: string,
     data: {
       date: string;
@@ -236,69 +385,9 @@ export class TestSetRepository {
       score: number;
       average?: number;
       maxScore?: number;
-    }>
-  ): Promise<TestSetWithScores | null> {
-    const now = new Date().toISOString();
-
-    if (isSupabaseConfigured() && supabase) {
-      // テストセット更新
-      const { data: set, error: setError } = await supabase
-        .from('test_sets')
-        .update({
-          date: data.date,
-          name: data.name,
-          grade: data.grade,
-          memo: data.memo,
-          updated_at: now,
-        })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (setError || !set) {
-        throw new Error(`テストセットの更新に失敗しました: ${setError?.message}`);
-      }
-
-      // 既存スコアを削除して再作成
-      await supabase.from('test_scores').delete().eq('test_set_id', id);
-
-      const scoreInserts = scores.map(s => ({
-        test_set_id: id,
-        subject: s.subject,
-        score: s.score,
-        average: s.average,
-        max_score: s.maxScore ?? 100,
-      }));
-
-      const { data: insertedScores } = await supabase
-        .from('test_scores')
-        .insert(scoreInserts)
-        .select();
-
-      return {
-        id: set.id,
-        userId: set.user_id,
-        date: set.date,
-        name: set.name,
-        grade: set.grade,
-        memo: set.memo,
-        createdAt: set.created_at,
-        updatedAt: set.updated_at,
-        scores: (insertedScores || []).map(s => ({
-          id: s.id,
-          testSetId: s.test_set_id,
-          subject: s.subject,
-          score: s.score,
-          average: s.average,
-          maxScore: s.max_score,
-          rank: s.rank,
-          deviation: s.deviation,
-          createdAt: s.created_at,
-        })),
-      };
-    }
-
-    // LocalStorageフォールバック
+    }>,
+    now: string
+  ): TestSetWithScores | null {
     const sets = this.getLocalSets();
     const index = sets.findIndex(s => s.id === id);
     if (index === -1) return null;
@@ -329,30 +418,6 @@ export class TestSetRepository {
 
     return { ...sets[index], scores: newScores };
   }
-
-  async deleteTestSet(id: string): Promise<void> {
-    if (isSupabaseConfigured() && supabase) {
-      // スコアはCASCADEで自動削除される
-      const { error } = await supabase
-        .from('test_sets')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        throw new Error(`削除に失敗しました: ${error.message}`);
-      }
-      return;
-    }
-
-    // LocalStorageフォールバック
-    const sets = this.getLocalSets().filter(s => s.id !== id);
-    this.saveLocalSets(sets);
-
-    const scores = this.getLocalScores().filter(s => s.testSetId !== id);
-    this.saveLocalScores(scores);
-  }
-
-  // ========== LocalStorage Helpers ==========
 
   private getLocalSets(): TestSet[] {
     try {

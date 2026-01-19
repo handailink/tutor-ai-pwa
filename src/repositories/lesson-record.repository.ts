@@ -6,6 +6,9 @@ const STORAGE_KEY = 'tutor_ai_lesson_records';
 
 export class LessonRecordRepository {
   async findByUserId(userId: string): Promise<LessonRecord[]> {
+    const localRecords = this.getLocal().filter(r => r.userId === userId)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
     if (isSupabaseConfigured() && supabase) {
       const { data, error } = await supabase
         .from('lesson_records')
@@ -15,16 +18,18 @@ export class LessonRecordRepository {
 
       if (error) {
         console.error('Error fetching lesson_records:', error);
-        return this.getLocal().filter(r => r.userId === userId)
-          .sort((a, b) => b.date.localeCompare(a.date));
+        return localRecords;
+      }
+
+      if (!data || data.length === 0) {
+        return localRecords;
       }
 
       return (data || []).map(this.mapFromSupabase);
     }
 
     // LocalStorageフォールバック
-    return this.getLocal().filter(r => r.userId === userId)
-      .sort((a, b) => b.date.localeCompare(a.date));
+    return localRecords;
   }
 
   async findById(id: string): Promise<LessonRecord | null> {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import ja from 'date-fns/locale/ja';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +8,8 @@ import { LessonRecord } from '../types';
 import './Parent.css';
 
 export const Parent: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [lessonRecords, setLessonRecords] = useState<LessonRecord[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -59,6 +61,16 @@ export const Parent: React.FC = () => {
   const handleOpenCreate = () => {
     resetForm();
     setIsFormOpen(true);
+  };
+
+  const handleLogout = async () => {
+    if (!window.confirm('ログアウトしますか？')) return;
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      alert('ログアウトに失敗しました。もう一度試してね');
+    }
   };
 
   const handleEdit = (lesson: LessonRecord) => {
@@ -118,9 +130,14 @@ export const Parent: React.FC = () => {
       <header className="parent-header">
         <div className="parent-header-row">
           <h1 className="parent-title">授業管理</h1>
-          <button className="parent-add-button" onClick={handleOpenCreate}>
-            ＋授業を追加
-          </button>
+          <div className="parent-header-actions">
+            <button className="parent-add-button" onClick={handleOpenCreate}>
+              ＋授業を追加
+            </button>
+            <button type="button" className="parent-logout-button" onClick={handleLogout}>
+              ログアウト
+            </button>
+          </div>
         </div>
       </header>
 

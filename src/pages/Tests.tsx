@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { TestSetRepository } from '../repositories';
@@ -8,7 +9,8 @@ import { generateId } from '../utils/id';
 import './Tests.css';
 
 export const Tests: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [testSets, setTestSets] = useState<TestSetWithScores[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('all');
@@ -41,6 +43,16 @@ export const Tests: React.FC = () => {
   const handleCreate = () => {
     setSelectedSet(null);
     setShowModal(true);
+  };
+
+  const handleLogout = async () => {
+    if (!window.confirm('ログアウトしますか？')) return;
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      alert('ログアウトに失敗しました。もう一度試してね');
+    }
   };
 
   const handleView = (testSet: TestSetWithScores) => {
@@ -77,9 +89,14 @@ export const Tests: React.FC = () => {
     <div className="tests-page">
       <header className="tests-header">
         <h1 className="tests-title">テスト結果</h1>
-        <button className="tests-add-button" onClick={handleCreate}>
-          + 追加
-        </button>
+        <div className="tests-header-actions">
+          <button className="tests-add-button" onClick={handleCreate}>
+            + 追加
+          </button>
+          <button type="button" className="tests-logout-button" onClick={handleLogout}>
+            ログアウト
+          </button>
+        </div>
       </header>
 
       <div className="tests-filters">
