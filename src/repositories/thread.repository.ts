@@ -1,6 +1,7 @@
 import { SupabaseBaseRepository } from './supabase-base.repository';
 import { Thread } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { isValidUuid } from '../utils/uuid';
 
 export class ThreadRepository extends SupabaseBaseRepository<Thread> {
   protected getTableName(): string {
@@ -34,6 +35,9 @@ export class ThreadRepository extends SupabaseBaseRepository<Thread> {
   }
 
   async findByProjectId(projectId: string): Promise<Thread[]> {
+    if (!isValidUuid(projectId)) {
+      return this.getFromLocalStorage().filter((t) => t.projectId === projectId);
+    }
     if (isSupabaseConfigured() && supabase) {
       const { data, error } = await supabase
         .from(this.getTableName())
@@ -51,6 +55,11 @@ export class ThreadRepository extends SupabaseBaseRepository<Thread> {
   }
 
   async findByUserIdAndProjectId(userId: string, projectId: string): Promise<Thread[]> {
+    if (!isValidUuid(userId) || !isValidUuid(projectId)) {
+      return this.getFromLocalStorage().filter(
+        (t) => t.userId === userId && t.projectId === projectId
+      );
+    }
     if (isSupabaseConfigured() && supabase) {
       const { data, error } = await supabase
         .from(this.getTableName())
@@ -74,10 +83,41 @@ export class ThreadRepository extends SupabaseBaseRepository<Thread> {
 
   async createThread(userId: string, projectId: string, title: string): Promise<Thread> {
     const now = new Date().toISOString();
+
+    // Prefer creating the thread in Supabase when IDs are UUIDs.
+    // This prevents foreign-key errors when inserting messages referencing thread_id.
+    if (isValidUuid(userId) && isValidUuid(projectId) && isSupabaseConfigured() && supabase) {
+      const payload = this.mapToSupabase({
+        userId,
+        projectId,
+        title,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Let Postgres generate the primary key (uuid)
+      delete (payload as any).id;
+
+      const { data, error } = await supabase
+        .from(this.getTableName())
+        .insert(payload)
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        return this.mapSingleFromSupabase(data);
+      }
+
+      console.error('Error creating thread in Supabase:', error);
+      // Fall through to local create
+    }
+
+    // Fallback: local storage (or base repo logic)
     return this.create({
       userId,
       projectId,
       title,
+      createdAt: now,
       updatedAt: now,
     });
   }

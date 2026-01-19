@@ -1,0 +1,28 @@
+name: Monthly Payroll Export
+
+on:
+  schedule:
+    - cron: '30 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call payroll export function
+        env:
+          FUNCTION_URL: ${{ secrets.SUPABASE_PAYROLL_EXPORT_URL }}
+          PAYROLL_TOKEN: ${{ secrets.PAYROLL_EXPORT_TOKEN }}
+        run: |
+          if [ -z "$FUNCTION_URL" ]; then
+            echo "SUPABASE_PAYROLL_EXPORT_URL が未設定です"
+            exit 1
+          fi
+          if [ -z "$PAYROLL_TOKEN" ]; then
+            echo "PAYROLL_EXPORT_TOKEN が未設定です"
+            exit 1
+          fi
+          curl -sS -X POST "$FUNCTION_URL" \
+            -H "content-type: application/json" \
+            -H "x-payroll-token: $PAYROLL_TOKEN" \
+            -d "{}"

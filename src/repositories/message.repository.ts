@@ -1,6 +1,7 @@
 import { SupabaseBaseRepository } from './supabase-base.repository';
 import { Message, Attachment } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { isValidUuid } from '../utils/uuid';
 
 export class MessageRepository extends SupabaseBaseRepository<Message> {
   protected getTableName(): string {
@@ -46,6 +47,11 @@ export class MessageRepository extends SupabaseBaseRepository<Message> {
   }
 
   async findByThreadId(threadId: string): Promise<Message[]> {
+    if (!isValidUuid(threadId)) {
+      return this.getFromLocalStorage()
+        .filter((m) => m.threadId === threadId)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    }
     if (isSupabaseConfigured() && supabase) {
       const { data, error } = await supabase
         .from(this.getTableName())
@@ -67,7 +73,34 @@ export class MessageRepository extends SupabaseBaseRepository<Message> {
   }
 
   async createMessage(message: Message | Omit<Message, 'id' | 'createdAt'>): Promise<Message> {
-    return this.create(message);
+    // Ensure createdAt exists for both local and Supabase paths
+    const msg: any = {
+      ...message,
+      createdAt: (message as any).createdAt ?? new Date().toISOString(),
+    };
+
+    const threadId = msg.threadId as string | undefined;
+
+    // If we have a UUID threadId, prefer persisting to Supabase so messages don't "disappear" after refetch.
+    if (threadId && isValidUuid(threadId) && isSupabaseConfigured() && supabase) {
+      const payload = this.mapToSupabase(msg);
+
+      const { data, error } = await supabase
+        .from(this.getTableName())
+        .insert(payload)
+        // Return the inserted row so UI can render the persisted message immediately
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        return this.mapSingleFromSupabase(data);
+      }
+
+      console.error('Error creating message in Supabase:', error);
+      // Fall through to local create as a fallback
+    }
+
+    return this.create(msg);
   }
 
   async findByUserId(userId: string): Promise<Message[]> {
@@ -76,6 +109,15 @@ export class MessageRepository extends SupabaseBaseRepository<Message> {
 
   async searchByContent(userId: string, query: string): Promise<Message[]> {
     const lowerQuery = query.toLowerCase();
+
+    if (!isValidUuid(userId)) {
+      return this.getFromLocalStorage().filter(
+        (m) =>
+          m.userId === userId &&
+          (m.content.toLowerCase().includes(lowerQuery) ||
+            m.tags?.toLowerCase().includes(lowerQuery))
+      );
+    }
 
     if (isSupabaseConfigured() && supabase) {
       // Supabaseでの検索（ilike使用）

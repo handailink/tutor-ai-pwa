@@ -1,31 +1,29 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
-import { TestResultRepository } from '../repositories';
+import { TestSetRepository } from '../repositories';
 import { ProjectService } from '../services';
-import { TestResult, Project, Attachment } from '../types';
+import { TestSetWithScores, Project } from '../types';
 import { generateId } from '../utils/id';
 import './Tests.css';
 
 export const Tests: React.FC = () => {
   const { user } = useAuth();
-  const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [testSets, setTestSets] = useState<TestSetWithScores[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
-  const [selectedTest, setSelectedTest] = useState<TestResult | null>(null);
+  const [selectedSet, setSelectedSet] = useState<TestSetWithScores | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'detail'>('list');
 
-  const testRepository = useMemo(() => new TestResultRepository(), []);
+  const testRepository = useMemo(() => new TestSetRepository(), []);
   const projectService = useMemo(() => new ProjectService(), []);
 
-  const loadTestResults = useCallback(async () => {
+  const loadTestSets = useCallback(async () => {
     if (!user) return;
-    let results = await testRepository.findByUserId(user.id);
-    if (selectedProject !== 'all') {
-      results = results.filter((t) => t.projectId === selectedProject);
-    }
-    setTestResults(results);
-  }, [user, selectedProject, testRepository]);
+    const results = await testRepository.findByUserId(user.id);
+    setTestSets(results);
+  }, [user, testRepository]);
 
   const loadProjects = useCallback(async () => {
     if (!user) return;
@@ -35,33 +33,45 @@ export const Tests: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      loadTestResults();
+      loadTestSets();
       loadProjects();
     }
-  }, [user, selectedProject, loadTestResults, loadProjects]);
+  }, [user, loadTestSets, loadProjects]);
 
   const handleCreate = () => {
-    setSelectedTest(null);
+    setSelectedSet(null);
     setShowModal(true);
   };
 
-  const handleView = (test: TestResult) => {
-    setSelectedTest(test);
+  const handleView = (testSet: TestSetWithScores) => {
+    setSelectedSet(testSet);
     setActiveTab('detail');
   };
 
-  const handleSave = async (testResult: Omit<TestResult, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleSave = async (
+    data: { date: string; name: string; grade?: string; memo?: string },
+    scores: Array<{ subject: string; score: number; average?: number; maxScore?: number }>
+  ) => {
     if (!user) return;
-    if (selectedTest) {
-      await testRepository.updateTestResult(selectedTest.id, testResult as Partial<TestResult>);
+    if (selectedSet) {
+      await testRepository.updateTestSet(selectedSet.id, data, scores);
     } else {
-      await testRepository.createTestResult(testResult);
+      await testRepository.createTestSet(user.id, data, scores);
     }
     setShowModal(false);
-    loadTestResults();
+    setSelectedSet(null);
+    setActiveTab('list');
+    loadTestSets();
   };
 
-  const filteredResults = testResults;
+  const selectedProjectName =
+    selectedProject === 'all'
+      ? null
+      : projects.find((p) => p.id === selectedProject)?.name || null;
+  const filteredSets =
+    selectedProjectName === null
+      ? testSets
+      : testSets.filter((set) => set.scores.some((score) => score.subject === selectedProjectName));
 
   return (
     <div className="tests-page">
@@ -89,38 +99,39 @@ export const Tests: React.FC = () => {
 
       {activeTab === 'list' && (
         <div className="tests-list">
-          {filteredResults.length === 0 ? (
+          {filteredSets.length === 0 ? (
             <div className="tests-empty">テスト結果がありません</div>
           ) : (
-            filteredResults.map((test) => {
-              const project = projects.find((p) => p.id === test.projectId);
-              const percentage = test.maxScore
-                ? Math.round((test.score / test.maxScore) * 100)
-                : null;
+            filteredSets.map((testSet) => {
               return (
                 <div
-                  key={test.id}
-                  className="tests-item"
-                  onClick={() => handleView(test)}
+                  key={testSet.id}
+                  className="tests-set-item"
+                  onClick={() => handleView(testSet)}
                 >
                   <div className="tests-item-header">
                     <div>
-                      <h3 className="tests-item-title">{project?.name || '不明'}</h3>
+                      <h3 className="tests-item-title">{testSet.name}</h3>
                       <div className="tests-item-meta">
-                        {test.takenAt}
-                        {test.tags && <span className="tests-tags">{test.tags}</span>}
+                        {testSet.date}
+                        {testSet.grade && <span className="tests-tags">{testSet.grade}</span>}
                       </div>
                     </div>
-                    <div className="tests-score">
-                      <span className="tests-score-value">{test.score}</span>
-                      {test.maxScore && (
-                        <span className="tests-score-max">/{test.maxScore}</span>
-                      )}
-                      {percentage !== null && (
-                        <span className="tests-score-percent">({percentage}%)</span>
-                      )}
-                    </div>
+                    <div className="tests-set-count">{testSet.scores.length}教科</div>
                   </div>
+                  {testSet.scores.length > 0 && (
+                    <div className="tests-set-scores">
+                      {testSet.scores.map((score) => (
+                        <div key={score.id} className="tests-set-score">
+                          <span>{score.subject}</span>
+                          <span>
+                            {score.score}
+                            {score.maxScore ? `/${score.maxScore}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -128,7 +139,7 @@ export const Tests: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'detail' && selectedTest && (
+      {activeTab === 'detail' && selectedSet && (
         <div className="tests-detail">
           <button
             className="tests-back-button"
@@ -138,27 +149,37 @@ export const Tests: React.FC = () => {
           </button>
           <div className="tests-detail-content">
             <h2 className="tests-detail-title">
-              {projects.find((p) => p.id === selectedTest.projectId)?.name || '不明'}
+              {selectedSet.name}
             </h2>
             <div className="tests-detail-meta">
-              <p>実施日: {selectedTest.takenAt}</p>
-              <p>
-                点数: {selectedTest.score}
-                {selectedTest.maxScore && ` / ${selectedTest.maxScore}`}
-              </p>
-              {selectedTest.tags && <p>タグ: {selectedTest.tags}</p>}
+              <p>実施日: {selectedSet.date}</p>
+              {selectedSet.grade && <p>学年: {selectedSet.grade}</p>}
+              {selectedSet.memo && <p>メモ: {selectedSet.memo}</p>}
             </div>
-            {selectedTest.attachments && selectedTest.attachments.length > 0 && (
-              <div className="tests-detail-attachments">
-                {selectedTest.attachments.map((att) => (
-                  <img key={att.id} src={att.urlOrData} alt={att.name} />
-                ))}
-              </div>
-            )}
-            <div className="tests-analysis">
-              <h3>分析（モック）</h3>
-              <p>弱点候補: 基礎計算、文章題</p>
-              <p>次回アクション: 練習問題を解いて復習する</p>
+            <div className="tests-detail-scores">
+              <h3>教科ごとの結果</h3>
+              {selectedSet.scores.length === 0 ? (
+                <p className="tests-detail-empty">まだ教科の結果がありません</p>
+              ) : (
+                <div className="tests-detail-score-list">
+                  {selectedSet.scores.map((score) => (
+                    <div key={score.id} className="tests-detail-score">
+                      <div className="tests-detail-score-subject">{score.subject}</div>
+                      <div className="tests-detail-score-values">
+                        <span>
+                          {score.score}
+                          {score.maxScore ? `/${score.maxScore}` : ''}
+                        </span>
+                        {score.average !== undefined && (
+                          <span className="tests-detail-score-average">
+                            平均: {score.average}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -166,9 +187,8 @@ export const Tests: React.FC = () => {
 
       {showModal && (
         <TestModal
-          test={selectedTest}
+          testSet={selectedSet}
           projects={projects}
-          userId={user?.id || ''}
           onSave={handleSave}
           onClose={() => setShowModal(false)}
         />
@@ -178,143 +198,249 @@ export const Tests: React.FC = () => {
 };
 
 interface TestModalProps {
-  test: TestResult | null;
+  testSet: TestSetWithScores | null;
   projects: Project[];
-  userId: string;
-  onSave: (testResult: Omit<TestResult, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onSave: (
+    data: { date: string; name: string; grade?: string; memo?: string },
+    scores: Array<{ subject: string; score: number; average?: number; maxScore?: number }>
+  ) => void;
   onClose: () => void;
 }
 
-const TestModal: React.FC<TestModalProps> = ({ test, projects, userId, onSave, onClose }) => {
-  const [projectId, setProjectId] = useState(test?.projectId || projects[0]?.id || '');
-  const [takenAt, setTakenAt] = useState(test?.takenAt || '');
-  const [score, setScore] = useState(test?.score.toString() || '');
-  const [maxScore, setMaxScore] = useState(test?.maxScore?.toString() || '');
-  const [tags, setTags] = useState(test?.tags || '');
-  const [attachments, setAttachments] = useState<Attachment[]>(test?.attachments || []);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const cameraInputRef = React.useRef<HTMLInputElement>(null);
+type ScoreInput = {
+  id: string;
+  subject: string;
+  score: string;
+  maxScore: string;
+  average: string;
+};
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      Array.from(files).forEach((file) => {
-        if (file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const attachment: Attachment = {
-              id: generateId(),
-              type: 'image',
-              urlOrData: event.target?.result as string,
-              name: file.name,
-            };
-            setAttachments((prev) => [...prev, attachment]);
-          };
-          reader.readAsDataURL(file);
-        }
-      });
-    }
+const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClose }) => {
+  const [name, setName] = useState(testSet?.name || '');
+  const [date, setDate] = useState(testSet?.date || '');
+  const [grade, setGrade] = useState(testSet?.grade || '');
+  const [memo, setMemo] = useState(testSet?.memo || '');
+  const [scores, setScores] = useState<ScoreInput[]>(
+    testSet?.scores.map((score) => ({
+      id: generateId(),
+      subject: score.subject,
+      score: score.score.toString(),
+      maxScore: score.maxScore ? score.maxScore.toString() : '',
+      average: score.average !== undefined ? score.average.toString() : '',
+    })) || []
+  );
+
+  useEffect(() => {
+    if (date || testSet) return;
+    setDate(format(new Date(), 'yyyy-MM-dd'));
+  }, [date, testSet]);
+
+  useEffect(() => {
+    if (scores.length > 0) return;
+    setScores([{ id: generateId(), subject: '', score: '', maxScore: '', average: '' }]);
+  }, [scores.length]);
+
+  const handleAddScore = () => {
+    setScores((prev) => [
+      ...prev,
+      { id: generateId(), subject: '', score: '', maxScore: '', average: '' },
+    ]);
+  };
+
+  const handleRemoveScore = (id: string) => {
+    setScores((prev) => prev.filter((score) => score.id !== id));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectId || !takenAt || !score) {
-      alert('教科、実施日、点数を入力してください');
+    if (!name.trim() || !date.trim()) {
+      alert('テスト名と実施日を入力してください');
       return;
     }
-    onSave({
-      userId,
-      projectId,
-      takenAt,
-      score: parseInt(score),
-      maxScore: maxScore ? parseInt(maxScore) : undefined,
-      tags: tags || undefined,
-      attachments: attachments.length > 0 ? attachments : undefined,
-    } as Omit<TestResult, 'id' | 'createdAt' | 'updatedAt'>);
+    const sanitizedScores = scores
+      .map((score) => ({
+        subject: score.subject.trim(),
+        score: score.score.trim(),
+        maxScore: score.maxScore.trim(),
+        average: score.average.trim(),
+      }))
+      .filter((score) => score.subject && score.score);
+
+    if (sanitizedScores.length === 0) {
+      alert('教科ごとの点数を入力してください');
+      return;
+    }
+
+    onSave(
+      {
+        date: date.trim(),
+        name: name.trim(),
+        grade: grade.trim() || undefined,
+        memo: memo.trim() || undefined,
+      },
+      sanitizedScores.map((score) => ({
+        subject: score.subject,
+        score: parseInt(score.score, 10),
+        maxScore: score.maxScore ? parseInt(score.maxScore, 10) : undefined,
+        average: score.average ? parseInt(score.average, 10) : undefined,
+      }))
+    );
   };
 
   return (
     <div className="tests-modal-overlay" onClick={onClose}>
       <div className="tests-modal" onClick={(e) => e.stopPropagation()}>
         <h2 className="tests-modal-title">
-          {test ? 'テスト結果を編集' : '新しいテスト結果'}
+          {testSet ? 'テスト結果を編集' : '新しいテスト結果'}
         </h2>
         <form onSubmit={handleSubmit} className="tests-modal-form">
           <div className="tests-form-group">
-            <label>教科</label>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
+            <label>テスト名</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例: 中間テスト（2学期）"
               required
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              lang="ja"
+              inputMode="text"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
           </div>
           <div className="tests-form-group">
             <label>実施日（例: 2025-12-25）</label>
             <input
               type="text"
-              value={takenAt}
-              onChange={(e) => setTakenAt(e.target.value)}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
               placeholder="2025-12-25"
               required
+              lang="ja"
+              inputMode="text"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </div>
           <div className="tests-form-group">
-            <label>点数</label>
-            <input
-              type="number"
-              value={score}
-              onChange={(e) => setScore(e.target.value)}
-              required
-              min="0"
-            />
-          </div>
-          <div className="tests-form-group">
-            <label>満点（任意）</label>
-            <input
-              type="number"
-              value={maxScore}
-              onChange={(e) => setMaxScore(e.target.value)}
-              min="0"
-            />
-          </div>
-          <div className="tests-form-group">
-            <label>タグ（任意）</label>
+            <label>学年（任意）</label>
             <input
               type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="例: 一次関数、二次関数"
+              value={grade}
+              onChange={(e) => setGrade(e.target.value)}
+              placeholder="例: 中1"
+              lang="ja"
+              inputMode="text"
+              autoCapitalize="none"
+              spellCheck={false}
             />
           </div>
           <div className="tests-form-group">
-            <label>スキャン画像</label>
-            <div className="tests-attachment-buttons">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                📷 アップロード
-              </button>
-              <button
-                type="button"
-                onClick={() => cameraInputRef.current?.click()}
-              >
-                📸 カメラ
+            <label>メモ（任意）</label>
+            <textarea
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder="補足メモ"
+              rows={3}
+              lang="ja"
+              inputMode="text"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
+          </div>
+          <div className="tests-form-group">
+            <label>教科別の点数</label>
+            <div className="tests-score-blocks">
+              {scores.map((score, index) => (
+                <div key={score.id} className="tests-score-block">
+                  <div className="tests-score-block-header">
+                    <div className="tests-score-block-title">教科 {index + 1}</div>
+                    {scores.length > 1 && (
+                      <button
+                        type="button"
+                        className="tests-score-remove"
+                        onClick={() => handleRemoveScore(score.id)}
+                        aria-label={`教科${index + 1}を削除`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <div className="tests-score-row">
+                    <div className="tests-form-group">
+                      <label>教科</label>
+                      <select
+                        value={score.subject}
+                        onChange={(e) =>
+                          setScores((prev) =>
+                            prev.map((item) =>
+                              item.id === score.id ? { ...item, subject: e.target.value } : item
+                            )
+                          )
+                        }
+                      >
+                        <option value="">選択してください</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tests-form-group">
+                      <label>点数</label>
+                      <input
+                        type="number"
+                        value={score.score}
+                        onChange={(e) =>
+                          setScores((prev) =>
+                            prev.map((item) =>
+                              item.id === score.id ? { ...item, score: e.target.value } : item
+                            )
+                          )
+                        }
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                  <div className="tests-score-row">
+                    <div className="tests-form-group">
+                      <label>満点（任意）</label>
+                      <input
+                        type="number"
+                        value={score.maxScore}
+                        onChange={(e) =>
+                          setScores((prev) =>
+                            prev.map((item) =>
+                              item.id === score.id ? { ...item, maxScore: e.target.value } : item
+                            )
+                          )
+                        }
+                        min="0"
+                      />
+                    </div>
+                    <div className="tests-form-group">
+                      <label>平均点（任意）</label>
+                      <input
+                        type="number"
+                        value={score.average}
+                        onChange={(e) =>
+                          setScores((prev) =>
+                            prev.map((item) =>
+                              item.id === score.id ? { ...item, average: e.target.value } : item
+                            )
+                          )
+                        }
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button type="button" className="tests-score-add" onClick={handleAddScore}>
+                ＋教科を追加
               </button>
             </div>
-            {attachments.length > 0 && (
-              <div className="tests-attachments">
-                {attachments.map((att) => (
-                  <img key={att.id} src={att.urlOrData} alt={att.name} />
-                ))}
-              </div>
-            )}
           </div>
           <div className="tests-modal-actions">
             <button type="button" onClick={onClose}>
@@ -323,22 +449,6 @@ const TestModal: React.FC<TestModalProps> = ({ test, projects, userId, onSave, o
             <button type="submit">保存</button>
           </div>
         </form>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-        />
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-        />
       </div>
     </div>
   );

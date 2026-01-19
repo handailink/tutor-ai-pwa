@@ -76,6 +76,19 @@
   gap: 16px;
 }
 
+.tests-set-item {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.tests-set-item:hover {
+  background: var(--bg-tertiary);
+}
+
 .tests-item-title {
   font-size: 18px;
   font-weight: 600;
@@ -103,6 +116,32 @@
   align-items: baseline;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.tests-set-count {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.tests-set-scores {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.tests-set-score {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: var(--text-secondary);
 }
 
 .tests-score-value {
@@ -170,6 +209,58 @@
   object-fit: contain;
 }
 
+.tests-detail-scores {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.tests-detail-scores h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.tests-detail-empty {
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+.tests-detail-score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tests-detail-score {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.tests-detail-score-subject {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tests-detail-score-values {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.tests-detail-score-average {
+  color: var(--text-tertiary);
+}
+
 .tests-analysis {
   background: var(--bg-primary);
   border-radius: 8px;
@@ -232,6 +323,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .tests-form-group label {
@@ -241,13 +333,72 @@
 }
 
 .tests-form-group input,
-.tests-form-group select {
+.tests-form-group select,
+.tests-form-group textarea {
   padding: 12px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text-primary);
   font-size: 16px;
+}
+
+.tests-form-group textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.tests-score-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tests-score-block {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tests-score-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tests-score-block-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tests-score-row {
+  display: flex;
+  gap: 12px;
+}
+
+.tests-score-row .tests-form-group {
+  flex: 1;
+}
+
+.tests-score-remove {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.tests-score-add {
+  align-self: flex-start;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .tests-attachment-buttons {

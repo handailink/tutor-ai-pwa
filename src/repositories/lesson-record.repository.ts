@@ -15,7 +15,8 @@ export class LessonRecordRepository {
 
       if (error) {
         console.error('Error fetching lesson_records:', error);
-        return [];
+        return this.getLocal().filter(r => r.userId === userId)
+          .sort((a, b) => b.date.localeCompare(a.date));
       }
 
       return (data || []).map(this.mapFromSupabase);
@@ -83,29 +84,17 @@ export class LessonRecordRepository {
         .select()
         .single();
 
-      if (error || !record) {
-        throw new Error(`授業記録の保存に失敗しました: ${error?.message}`);
+      if (!error && record) {
+        return this.mapFromSupabase(record);
       }
+      console.error('Error creating lesson_records:', error);
+      // フォールバック
+      return this.createLocal(userId, data, now);
 
-      return this.mapFromSupabase(record);
     }
 
     // LocalStorageフォールバック
-    const newRecord: LessonRecord = {
-      id: generateId(),
-      userId,
-      date: data.date,
-      duration: data.duration,
-      content: data.content,
-      memo: data.memo,
-      createdAt: now,
-    };
-
-    const records = this.getLocal();
-    records.push(newRecord);
-    this.saveLocal(records);
-
-    return newRecord;
+    return this.createLocal(userId, data, now);
   }
 
   async update(
@@ -133,29 +122,16 @@ export class LessonRecordRepository {
         .select()
         .single();
 
-      if (error || !record) {
-        throw new Error(`授業記録の更新に失敗しました: ${error?.message}`);
+      if (!error && record) {
+        return this.mapFromSupabase(record);
       }
-
-      return this.mapFromSupabase(record);
+      console.error('Error updating lesson_records:', error);
+      // フォールバック
+      return this.updateLocal(id, data, now);
     }
 
     // LocalStorageフォールバック
-    const records = this.getLocal();
-    const index = records.findIndex(r => r.id === id);
-    if (index === -1) return null;
-
-    records[index] = {
-      ...records[index],
-      date: data.date,
-      duration: data.duration,
-      content: data.content,
-      memo: data.memo,
-      updatedAt: now,
-    };
-    this.saveLocal(records);
-
-    return records[index];
+    return this.updateLocal(id, data, now);
   }
 
   async delete(id: string): Promise<void> {
@@ -166,14 +142,16 @@ export class LessonRecordRepository {
         .eq('id', id);
 
       if (error) {
-        throw new Error(`削除に失敗しました: ${error.message}`);
+        console.error('Error deleting lesson_records:', error);
+        // フォールバック
+        this.deleteLocal(id);
+        return;
       }
       return;
     }
 
     // LocalStorageフォールバック
-    const records = this.getLocal().filter(r => r.id !== id);
-    this.saveLocal(records);
+    this.deleteLocal(id);
   }
 
   // ========== Mapping Helpers ==========
@@ -204,6 +182,55 @@ export class LessonRecordRepository {
 
   private saveLocal(records: LessonRecord[]): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  }
+
+  private createLocal(
+    userId: string,
+    data: { date: string; duration: number; content: string; memo?: string },
+    now: string
+  ): LessonRecord {
+    const newRecord: LessonRecord = {
+      id: generateId(),
+      userId,
+      date: data.date,
+      duration: data.duration,
+      content: data.content,
+      memo: data.memo,
+      createdAt: now,
+    };
+
+    const records = this.getLocal();
+    records.push(newRecord);
+    this.saveLocal(records);
+
+    return newRecord;
+  }
+
+  private updateLocal(
+    id: string,
+    data: { date: string; duration: number; content: string; memo?: string },
+    now: string
+  ): LessonRecord | null {
+    const records = this.getLocal();
+    const index = records.findIndex(r => r.id === id);
+    if (index === -1) return null;
+
+    records[index] = {
+      ...records[index],
+      date: data.date,
+      duration: data.duration,
+      content: data.content,
+      memo: data.memo,
+      updatedAt: now,
+    };
+    this.saveLocal(records);
+
+    return records[index];
+  }
+
+  private deleteLocal(id: string): void {
+    const records = this.getLocal().filter(r => r.id !== id);
+    this.saveLocal(records);
   }
 }
 

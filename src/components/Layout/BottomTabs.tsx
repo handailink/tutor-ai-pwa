@@ -2,19 +2,25 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './BottomTabs.css';
 
+type TabItem = {
+  path: string;
+  label: string;
+  icon: string;
+};
+
+const TABS: TabItem[] = [
+  { path: '/app/homework', label: '宿題管理', icon: '📝' },
+  { path: '/app/lessons', label: '授業管理', icon: '📖' },
+  { path: '/app/tests', label: 'テスト管理', icon: '🧪' },
+];
+
 export const BottomTabs: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const tabs = [
-    { path: '/app/chat', label: 'チャット', icon: '💬' },
-    { path: '/app/homework', label: '宿題', icon: '📝' },
-    { path: '/app/parent', label: '授業記録', icon: '📖' },
-  ];
-
   return (
     <nav className="bottom-tabs" aria-label="メインナビゲーション">
-      {tabs.map((tab) => {
+      {TABS.map((tab) => {
         const isActive = location.pathname === tab.path;
         return (
           <button

@@ -1,33 +1,68 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { format } from 'date-fns';
+import ja from 'date-fns/locale/ja';
 import { useAuth } from '../contexts/AuthContext';
 import { HomeworkRepository } from '../repositories';
 import { ProjectService } from '../services';
-import { Homework as HomeworkType, Project, Attachment } from '../types';
+import { Homework as HomeworkType, Project } from '../types';
 import { generateId } from '../utils/id';
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addDays,
-  addMonths,
-  subMonths,
-  isSameMonth,
-  isSameDay,
-  isToday,
-} from 'date-fns';
-import ja from 'date-fns/locale/ja';
 import './Homework.css';
+
+type TodoItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+type SubjectBlock = {
+  id: string;
+  projectId: string;
+  description: string;
+  todos: TodoItem[];
+};
+
+type HomeworkDetailPayload = {
+  type: 'todo_v1';
+  description: string;
+  todos: TodoItem[];
+};
+
+const parseHomeworkDetail = (detail?: string) => {
+  if (!detail) {
+    return { description: '', todos: [] as TodoItem[] };
+  }
+  try {
+    const parsed = JSON.parse(detail) as HomeworkDetailPayload;
+    if (parsed?.type === 'todo_v1' && Array.isArray(parsed.todos)) {
+      return {
+        description: parsed.description || '',
+        todos: parsed.todos,
+      };
+    }
+  } catch {
+    // plain text detail
+  }
+  return { description: detail, todos: [] as TodoItem[] };
+};
+
+const serializeHomeworkDetail = (description: string, todos: TodoItem[]) => {
+  const payload: HomeworkDetailPayload = {
+    type: 'todo_v1',
+    description,
+    todos,
+  };
+  return JSON.stringify(payload);
+};
 
 export const Homework: React.FC = () => {
   const { user } = useAuth();
   const [homeworks, setHomeworks] = useState<HomeworkType[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [selectedHomework, setSelectedHomework] = useState<HomeworkType | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [assignedAt, setAssignedAt] = useState('');
+  const [subjectBlocks, setSubjectBlocks] = useState<SubjectBlock[]>([]);
 
   const homeworkRepository = useMemo(() => new HomeworkRepository(), []);
   const projectService = useMemo(() => new ProjectService(), []);
@@ -51,388 +86,473 @@ export const Homework: React.FC = () => {
     }
   }, [user, loadHomeworks, loadProjects]);
 
-  // 特定の日付に指導日がある宿題を取得（完了含む）
-  const getHomeworksForDate = (date: Date) => {
-    return homeworks.filter(h => {
-      if (!h.assignedAt) return false;
-      const assignedDate = new Date(h.assignedAt);
-      return isSameDay(assignedDate, date);
-    });
-  };
-
-  // 日付に宿題があるかどうか（指導日で判定）
-  const hasHomeworkOnDate = (date: Date) => {
-    return homeworks.some(h => {
-      if (!h.assignedAt) return false;
-      const assignedDate = new Date(h.assignedAt);
-      return isSameDay(assignedDate, date);
-    });
-  };
-
-  // 選択された日付の宿題（指導日で表示、完了含む）
-  const selectedDateHomeworks = useMemo(() => {
-    if (!selectedDate) return [];
-    return getHomeworksForDate(selectedDate);
-  }, [selectedDate, homeworks]);
-
-  const handleToggleStatus = async (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    await homeworkRepository.toggleStatus(id);
-    loadHomeworks();
-  };
-
-  const handleCreate = () => {
-    setSelectedHomework(null);
-    setShowModal(true);
-  };
-
-  const handleView = (homework: HomeworkType) => {
-    setSelectedHomework(homework);
-    setShowModal(true);
-  };
-
-  const handleSave = async (homework: Omit<HomeworkType, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!user) return;
-    if (selectedHomework) {
-      await homeworkRepository.updateHomework(selectedHomework.id, homework as Partial<HomeworkType>);
-    } else {
-      await homeworkRepository.createHomework(homework);
-    }
-    setShowModal(false);
-    loadHomeworks();
-  };
-
-  const handleDelete = async () => {
-    if (!selectedHomework) return;
-    if (!confirm('この宿題を削除しますか？')) return;
-    await homeworkRepository.delete(selectedHomework.id);
-    setShowModal(false);
-    setSelectedHomework(null);
-    loadHomeworks();
-  };
-
-  // カレンダーの日付を生成
-  const renderCalendar = () => {
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(monthStart);
-    const startDate = startOfWeek(monthStart, { locale: ja });
-    const endDate = endOfWeek(monthEnd, { locale: ja });
-
-    const rows = [];
-    let days = [];
-    let day = startDate;
-
-    while (day <= endDate) {
-      for (let i = 0; i < 7; i++) {
-        const currentDay = day;
-        const hasHomework = hasHomeworkOnDate(currentDay);
-        const isSelected = selectedDate && isSameDay(currentDay, selectedDate);
-        const isCurrentMonth = isSameMonth(currentDay, monthStart);
-        const isTodayDate = isToday(currentDay);
-
-        days.push(
-          <div
-            key={day.toString()}
-            className={`calendar-day ${!isCurrentMonth ? 'other-month' : ''} ${isSelected ? 'selected' : ''} ${isTodayDate ? 'today' : ''} ${hasHomework ? 'has-homework' : ''}`}
-            onClick={() => setSelectedDate(currentDay)}
-          >
-            <span className="calendar-day-number">{format(currentDay, 'd')}</span>
-          </div>
-        );
-        day = addDays(day, 1);
+  const groupedHomeworks = useMemo(() => {
+    const map = new Map<string, HomeworkType[]>();
+    homeworks.forEach((hw) => {
+      const key = hw.assignedAt || '未設定';
+      if (!map.has(key)) {
+        map.set(key, []);
       }
-      rows.push(
-        <div className="calendar-row" key={day.toString()}>
-          {days}
-        </div>
-      );
-      days = [];
+      map.get(key)?.push(hw);
+    });
+    return Array.from(map.entries())
+      .map(([date, items]) => ({
+        date,
+        items: items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [homeworks]);
+
+  const createEmptySubjectBlock = useCallback(
+    (projectId: string) => ({
+      id: generateId(),
+      projectId,
+      description: '',
+      todos: [] as TodoItem[],
+    }),
+    []
+  );
+
+  const resetForm = useCallback(() => {
+    setAssignedAt(format(new Date(), 'yyyy-MM-dd'));
+    setSubjectBlocks([createEmptySubjectBlock(projects[0]?.id || '')]);
+    setEditingId(null);
+  }, [createEmptySubjectBlock, projects]);
+
+  const handleOpenCreate = () => {
+    resetForm();
+    setIsFormOpen(true);
+  };
+
+  const handleEdit = (homework: HomeworkType) => {
+    const detail = parseHomeworkDetail(homework.detail);
+    setAssignedAt(homework.assignedAt || format(new Date(), 'yyyy-MM-dd'));
+    setSubjectBlocks([
+      {
+        id: generateId(),
+        projectId: homework.projectId || projects[0]?.id || '',
+        description: detail.description,
+        todos: detail.todos,
+      },
+    ]);
+    setEditingId(homework.id);
+    setIsFormOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isFormOpen || editingId) return;
+    if (projects.length === 0) return;
+    setSubjectBlocks((prev) =>
+      prev.map((block) =>
+        block.projectId ? block : { ...block, projectId: projects[0].id }
+      )
+    );
+  }, [projects, isFormOpen, editingId]);
+
+  const handleAddSubjectBlock = () => {
+    setSubjectBlocks((prev) => [
+      ...prev,
+      createEmptySubjectBlock(projects[0]?.id || ''),
+    ]);
+  };
+
+  const handleRemoveSubjectBlock = (id: string) => {
+    setSubjectBlocks((prev) => prev.filter((block) => block.id !== id));
+  };
+
+  const handleAddTodo = (blockId: string) => {
+    setSubjectBlocks((prev) =>
+      prev.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              todos: [...block.todos, { id: generateId(), text: '', done: false }],
+            }
+          : block
+      )
+    );
+  };
+
+  const handleRemoveTodo = (blockId: string, id: string) => {
+    setSubjectBlocks((prev) =>
+      prev.map((block) =>
+        block.id === blockId
+          ? { ...block, todos: block.todos.filter((todo) => todo.id !== id) }
+          : block
+      )
+    );
+  };
+
+  const handleToggleTodoDone = async (homework: HomeworkType, todoId: string) => {
+    const detail = parseHomeworkDetail(homework.detail);
+    const nextTodos = detail.todos.map((todo) =>
+      todo.id === todoId ? { ...todo, done: !todo.done } : todo
+    );
+    const nextStatus: HomeworkType['status'] =
+      nextTodos.length > 0 && nextTodos.every((todo) => todo.done) ? 'done' : 'todo';
+    const nextDetail = serializeHomeworkDetail(detail.description, nextTodos);
+    const optimistic = homeworks.map((hw) =>
+      hw.id === homework.id ? { ...hw, detail: nextDetail, status: nextStatus } : hw
+    );
+    setHomeworks(optimistic);
+    try {
+      await homeworkRepository.updateHomework(homework.id, {
+        detail: nextDetail,
+        status: nextStatus,
+      } as Partial<HomeworkType>);
+    } catch (error) {
+      alert('チェックの更新に失敗しました。');
+      loadHomeworks();
+    }
+  };
+
+  const handleToggleHomeworkStatus = async (homework: HomeworkType) => {
+    const detail = parseHomeworkDetail(homework.detail);
+    const nextStatus: HomeworkType['status'] =
+      homework.status === 'done' ? 'todo' : 'done';
+    const nextTodos =
+      detail.todos.length > 0
+        ? detail.todos.map((todo) => ({ ...todo, done: nextStatus === 'done' }))
+        : detail.todos;
+    const nextDetail =
+      detail.todos.length > 0
+        ? serializeHomeworkDetail(detail.description, nextTodos)
+        : homework.detail;
+    const optimistic = homeworks.map((hw) =>
+      hw.id === homework.id ? { ...hw, status: nextStatus, detail: nextDetail } : hw
+    );
+    setHomeworks(optimistic);
+    try {
+      await homeworkRepository.updateHomework(homework.id, {
+        status: nextStatus,
+        detail: nextDetail,
+      } as Partial<HomeworkType>);
+    } catch (error) {
+      alert('チェックの更新に失敗しました。');
+      loadHomeworks();
+    }
+  };
+
+  const handleDeleteHomework = async (homework: HomeworkType) => {
+    if (!window.confirm('この宿題を削除しますか？')) return;
+    const optimistic = homeworks.filter((hw) => hw.id !== homework.id);
+    setHomeworks(optimistic);
+    try {
+      await homeworkRepository.deleteHomework(homework.id);
+    } catch (error) {
+      alert('削除に失敗しました。');
+      loadHomeworks();
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!assignedAt.trim()) {
+      alert('日付を入力してください');
+      return;
     }
 
-    return rows;
+    if (editingId) {
+      const target = subjectBlocks[0];
+      if (!target?.projectId) {
+        alert('教科を選択してください');
+        return;
+      }
+      const cleanedTodos = target.todos
+        .map((todo) => ({ ...todo, text: todo.text.trim() }))
+        .filter((todo) => todo.text.length > 0);
+      const nextStatus =
+        cleanedTodos.length > 0 && cleanedTodos.every((todo) => todo.done) ? 'done' : 'todo';
+      const detail = serializeHomeworkDetail(target.description.trim(), cleanedTodos);
+      const resolvedTitle = cleanedTodos[0]?.text || target.description.trim() || '宿題';
+      const payload: Omit<HomeworkType, 'id' | 'createdAt' | 'updatedAt'> = {
+        userId: user.id,
+        projectId: target.projectId,
+        title: resolvedTitle,
+        detail,
+        assignedAt: assignedAt.trim(),
+        dueAt: assignedAt.trim(),
+        status: nextStatus,
+      };
+      await homeworkRepository.updateHomework(editingId, payload as Partial<HomeworkType>);
+    } else {
+      const sanitizedBlocks = subjectBlocks
+        .map((block) => {
+          const cleanedTodos = block.todos
+            .map((todo) => ({ ...todo, text: todo.text.trim() }))
+            .filter((todo) => todo.text.length > 0);
+          return {
+            ...block,
+            description: block.description.trim(),
+            todos: cleanedTodos,
+          };
+        })
+        .filter((block) => block.projectId && (block.description || block.todos.length > 0));
+
+      if (sanitizedBlocks.length === 0) {
+        alert('教科と内容を入力してください');
+        return;
+      }
+
+      for (const block of sanitizedBlocks) {
+        const nextStatus =
+          block.todos.length > 0 && block.todos.every((todo) => todo.done) ? 'done' : 'todo';
+        const detail = serializeHomeworkDetail(block.description, block.todos);
+        const resolvedTitle = block.todos[0]?.text || block.description || '宿題';
+        const payload: Omit<HomeworkType, 'id' | 'createdAt' | 'updatedAt'> = {
+          userId: user.id,
+          projectId: block.projectId,
+          title: resolvedTitle,
+          detail,
+          assignedAt: assignedAt.trim(),
+          dueAt: assignedAt.trim(),
+          status: nextStatus,
+        };
+        await homeworkRepository.createHomework(payload);
+      }
+    }
+
+    setIsFormOpen(false);
+    resetForm();
+    loadHomeworks();
   };
 
   return (
     <div className="homework-page">
       <header className="homework-header">
-        <h1 className="homework-title">宿題</h1>
+        <div className="homework-header-row">
+          <h1 className="homework-title">宿題管理</h1>
+          <button className="homework-add-button" onClick={handleOpenCreate}>
+            ＋宿題を追加
+          </button>
+        </div>
       </header>
 
-      {/* カレンダー */}
-      <div className="calendar-container">
-            <div className="calendar-header">
-              <button className="calendar-nav" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
-                ‹
-              </button>
-              <h2 className="calendar-month">
-                {format(currentMonth, 'yyyy年M月', { locale: ja })}
-              </h2>
-              <button className="calendar-nav" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}>
-                ›
-              </button>
+      {isFormOpen && (
+        <section className="homework-form-card">
+          <h2 className="homework-form-title">
+            {editingId ? '宿題を編集' : '宿題を追加'}
+          </h2>
+          <form className="homework-form" onSubmit={handleSave}>
+            <div className="homework-form-row">
+              <div className="homework-form-group">
+                <label>日付</label>
+                <input
+                  type="text"
+                  value={assignedAt}
+                  onChange={(e) => setAssignedAt(e.target.value)}
+                  placeholder="2025-12-20"
+                  lang="ja"
+                  inputMode="text"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+              </div>
             </div>
-
-            <div className="calendar-weekdays">
-              {['日', '月', '火', '水', '木', '金', '土'].map(day => (
-                <div key={day} className="calendar-weekday">{day}</div>
+            <div className="homework-subject-blocks">
+              {subjectBlocks.map((block, index) => (
+                <div key={block.id} className="homework-subject-block">
+                  <div className="homework-subject-header">
+                    <div className="homework-form-group">
+                      <label>教科</label>
+                      <select
+                        value={block.projectId}
+                        onChange={(e) =>
+                          setSubjectBlocks((prev) =>
+                            prev.map((item) =>
+                              item.id === block.id ? { ...item, projectId: e.target.value } : item
+                            )
+                          )
+                        }
+                      >
+                        <option value="">選択してください</option>
+                        {projects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {!editingId && subjectBlocks.length > 1 && (
+                      <button
+                        type="button"
+                        className="homework-subject-remove"
+                        onClick={() => handleRemoveSubjectBlock(block.id)}
+                        aria-label={`教科ブロック${index + 1}を削除`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <div className="homework-form-group">
+                    <label>説明</label>
+                    <textarea
+                      value={block.description}
+                      onChange={(e) =>
+                        setSubjectBlocks((prev) =>
+                          prev.map((item) =>
+                            item.id === block.id ? { ...item, description: e.target.value } : item
+                          )
+                        )
+                      }
+                      placeholder="やることの補足を入力"
+                      rows={3}
+                      lang="ja"
+                      inputMode="text"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div className="homework-form-group">
+                    <div className="homework-todo-list">
+                      {block.todos.map((todo) => (
+                        <div key={todo.id} className="homework-todo-row">
+                          <input
+                            type="text"
+                            value={todo.text}
+                            onChange={(e) =>
+                              setSubjectBlocks((prev) =>
+                                prev.map((item) =>
+                                  item.id === block.id
+                                    ? {
+                                        ...item,
+                                        todos: item.todos.map((t) =>
+                                          t.id === todo.id ? { ...t, text: e.target.value } : t
+                                        ),
+                                      }
+                                    : item
+                                )
+                              )
+                            }
+                            placeholder="ToDoを入力"
+                            aria-label="項目"
+                            lang="ja"
+                            inputMode="text"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                          />
+                          <button
+                            type="button"
+                            className="homework-todo-remove"
+                            onClick={() => handleRemoveTodo(block.id, todo.id)}
+                            aria-label="項目を削除"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="homework-todo-add"
+                        onClick={() => handleAddTodo(block.id)}
+                      >
+                        ＋追加
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ))}
+              {!editingId && (
+                <button
+                  type="button"
+                  className="homework-subject-add"
+                  onClick={handleAddSubjectBlock}
+                >
+                  ＋教科ブロックを追加
+                </button>
+              )}
             </div>
-
-            <div className="calendar-grid">
-              {renderCalendar()}
+            <div className="homework-form-actions">
+              <button type="button" onClick={() => setIsFormOpen(false)}>
+                キャンセル
+              </button>
+              <button type="submit" className="primary">
+                保存
+              </button>
             </div>
-          </div>
+          </form>
+        </section>
+      )}
 
-      {/* 選択した日付の宿題 */}
-      {selectedDate && (
-        <div className="homework-date-section">
-          <h3 className="homework-date-title">
-            {format(selectedDate, 'M月d日（E）', { locale: ja })}
-          </h3>
-          {selectedDateHomeworks.length === 0 ? (
-            <p className="homework-empty-small">この日の宿題はありません</p>
-          ) : (
-            <div className="homework-list-compact">
-              {selectedDateHomeworks.map(homework => {
-                const project = projects.find(p => p.id === homework.projectId);
-                const isDone = homework.status === 'done';
-                return (
-                  <div 
-                    key={homework.id} 
-                    className={`homework-item-compact ${isDone ? 'done' : ''}`}
-                    onClick={() => handleView(homework)}
-                  >
-                    <div className="homework-item-info">
-                      <span className="homework-project-tag">{project?.name}</span>
-                      <span className="homework-item-title">{homework.title}</span>
-                      {homework.dueAt && (
-                        <span className="homework-item-due">期限: {homework.dueAt}</span>
+      <section className="homework-timeline">
+        {groupedHomeworks.length === 0 ? (
+          <div className="homework-empty">宿題がまだ登録されていません</div>
+        ) : (
+          groupedHomeworks.map((group) => (
+            <div key={group.date} className="homework-date-block">
+              <div className="homework-date-header">
+                <h2>
+                  {group.date === '未設定'
+                    ? '日付未設定'
+                    : format(new Date(group.date), 'M月d日（E）', { locale: ja })}
+                </h2>
+              </div>
+              <div className="homework-card-list">
+                {group.items.map((homework) => {
+                  const detail = parseHomeworkDetail(homework.detail);
+                  const project = projects.find((p) => p.id === homework.projectId);
+                  const sortedTodos = [...detail.todos].sort(
+                    (a, b) => Number(a.done) - Number(b.done)
+                  );
+                  return (
+                    <div
+                      key={homework.id}
+                      className={`homework-card ${homework.status === 'done' ? 'done' : ''}`}
+                    >
+                      <div className="homework-card-header">
+                        <div>
+                          <span className="homework-project-tag">{project?.name || '未設定'}</span>
+                        </div>
+                        <div className="homework-card-actions">
+                          <label className="homework-card-check">
+                            <input
+                              type="checkbox"
+                              checked={homework.status === 'done'}
+                              onChange={() => handleToggleHomeworkStatus(homework)}
+                              aria-label="宿題を完了にする"
+                            />
+                            <span>完了</span>
+                          </label>
+                          <button
+                            className="homework-edit-button"
+                            onClick={() => handleEdit(homework)}
+                          >
+                            編集
+                          </button>
+                          <button
+                            className="homework-delete-button"
+                            onClick={() => handleDeleteHomework(homework)}
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </div>
+                      {detail.description && (
+                        <p className="homework-card-description">{detail.description}</p>
+                      )}
+                      {detail.todos.length > 0 && (
+                        <div className="homework-card-todos">
+                          {sortedTodos.map((todo) => (
+                            <label key={todo.id} className="homework-card-todo">
+                              <input
+                                type="checkbox"
+                                checked={todo.done}
+                                onChange={() => handleToggleTodoDone(homework, todo.id)}
+                              />
+                              <span className={todo.done ? 'done' : ''}>{todo.text}</span>
+                            </label>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    <button
-                      className={`homework-check-button ${isDone ? 'checked' : ''}`}
-                      onClick={(e) => handleToggleStatus(homework.id, e)}
-                    >
-                      {isDone ? '✓' : '○'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 追加ボタン（フローティング） */}
-      <button className="homework-fab" onClick={handleCreate}>
-        + 宿題を追加
-      </button>
-
-      {showModal && (
-        <HomeworkModal
-          homework={selectedHomework}
-          projects={projects}
-          userId={user?.id || ''}
-          initialAssignedAt={selectedDate ? format(selectedDate, 'yyyy-MM-dd') : ''}
-          onSave={handleSave}
-          onDelete={selectedHomework ? handleDelete : undefined}
-          onClose={() => setShowModal(false)}
-        />
-      )}
-    </div>
-  );
-};
-
-interface HomeworkModalProps {
-  homework: HomeworkType | null;
-  projects: Project[];
-  userId: string;
-  initialAssignedAt?: string;
-  onSave: (homework: Omit<HomeworkType, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  onDelete?: () => void;
-  onClose: () => void;
-}
-
-const HomeworkModal: React.FC<HomeworkModalProps> = ({ homework, projects, userId, initialAssignedAt, onSave, onDelete, onClose }) => {
-  const [title, setTitle] = useState(homework?.title || '');
-  const [projectId, setProjectId] = useState(homework?.projectId || projects[0]?.id || '');
-  const [detail, setDetail] = useState(homework?.detail || '');
-  const [assignedAt, setAssignedAt] = useState(homework?.assignedAt || initialAssignedAt || '');
-  const [dueAt, setDueAt] = useState(homework?.dueAt || '');
-  const [attachments, setAttachments] = useState<Attachment[]>(homework?.attachments || []);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const cameraInputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      Array.from(files).forEach((file) => {
-        if (file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const attachment: Attachment = {
-              id: generateId(),
-              type: 'image',
-              urlOrData: event.target?.result as string,
-              name: file.name,
-            };
-            setAttachments((prev) => [...prev, attachment]);
-          };
-          reader.readAsDataURL(file);
-        }
-      });
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title || !projectId || !assignedAt || !dueAt) {
-      alert('タイトル、教科、指導日、期限を入力してください');
-      return;
-    }
-    onSave({
-      userId,
-      projectId,
-      title,
-      detail,
-      assignedAt,
-      dueAt,
-      status: homework?.status || 'todo',
-      attachments: attachments.length > 0 ? attachments : undefined,
-    } as Omit<HomeworkType, 'id' | 'createdAt' | 'updatedAt'>);
-  };
-
-  return (
-    <div className="homework-modal-overlay" onClick={onClose}>
-      <div className="homework-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="homework-modal-header">
-          <h2 className="homework-modal-title">
-            {homework ? '宿題を編集' : '新しい宿題'}
-          </h2>
-          {onDelete && (
-            <button className="homework-delete-button" onClick={onDelete}>
-              🗑️
-            </button>
-          )}
-        </div>
-        <form onSubmit={handleSubmit} className="homework-modal-form">
-          <div className="homework-form-group">
-            <label>タイトル *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="例: ワークP.45-50"
-              lang="ja"
-              inputMode="text"
-              autoCapitalize="none"
-              spellCheck={false}
-              required
-            />
-          </div>
-          <div className="homework-form-group">
-            <label>教科 *</label>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              required
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="homework-form-group">
-            <label>指導日 *（宿題を出した日）</label>
-            <input
-              type="text"
-              value={assignedAt}
-              onChange={(e) => setAssignedAt(e.target.value)}
-              placeholder="2025-12-20"
-              lang="ja"
-              inputMode="text"
-              autoCapitalize="none"
-              spellCheck={false}
-              required
-            />
-          </div>
-          <div className="homework-form-group">
-            <label>期限 *（提出日）</label>
-            <input
-              type="text"
-              value={dueAt}
-              onChange={(e) => setDueAt(e.target.value)}
-              placeholder="2025-12-25"
-              lang="ja"
-              inputMode="text"
-              autoCapitalize="none"
-              spellCheck={false}
-              required
-            />
-          </div>
-          <div className="homework-form-group">
-            <label>詳細（任意）</label>
-            <textarea
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-              rows={3}
-              placeholder="メモがあれば入力"
-              lang="ja"
-              inputMode="text"
-              autoCapitalize="none"
-              spellCheck={false}
-            />
-          </div>
-          <div className="homework-form-group">
-            <label>画像（任意）</label>
-            <div className="homework-attachment-buttons">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                📷 アップロード
-              </button>
-              <button
-                type="button"
-                onClick={() => cameraInputRef.current?.click()}
-              >
-                📸 カメラ
-              </button>
-            </div>
-            {attachments.length > 0 && (
-              <div className="homework-attachments">
-                {attachments.map((att) => (
-                  <img key={att.id} src={att.urlOrData} alt={att.name} />
-                ))}
+                  );
+                })}
               </div>
-            )}
-          </div>
-          <div className="homework-modal-actions">
-            <button type="button" onClick={onClose}>
-              キャンセル
-            </button>
-            <button type="submit" className="primary">保存</button>
-          </div>
-        </form>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-        />
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileSelect}
-          style={{ display: 'none' }}
-        />
-      </div>
+            </div>
+          ))
+        )}
+      </section>
     </div>
   );
 };

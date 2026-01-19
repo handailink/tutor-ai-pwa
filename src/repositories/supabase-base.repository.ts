@@ -1,3 +1,4 @@
+import { generateId } from '../utils/id';
 // import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
@@ -58,7 +59,7 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
     const items = this.getFromLocalStorage();
     const newItem = {
       ...item,
-      id: item.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2),
+      id: item.id || generateId(),
       createdAt: item.createdAt || now,
     } as unknown as T;
     items.push(newItem);

@@ -87,4 +87,8 @@ export class HomeworkRepository extends SupabaseBaseRepository<Homework> {
   async updateHomework(id: string, updates: Partial<Homework>): Promise<Homework | null> {
     return this.update(id, updates);
   }
+
+  async deleteHomework(id: string): Promise<boolean> {
+    return this.delete(id);
+  }
 }
