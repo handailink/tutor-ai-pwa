@@ -1,9 +1,9 @@
 import { generateId } from '../utils/id';
-// import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
  * Supabase対応の非同期ベースリポジトリ
- * 一時的にLocalStorageのみ使用（Supabaseテーブル未作成のため）
+ * Supabase優先で保存し、失敗時はLocalStorageにフォールバック
  */
 export abstract class SupabaseBaseRepository<T extends { id: string }> {
   protected abstract getTableName(): string;
@@ -21,11 +21,6 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
 
   // Supabase対応メソッド
   async findAll(userId: string): Promise<T[]> {
-    // 一時的にLocalStorageのみ使用（Supabaseテーブル未作成のため）
-    console.log(`[${this.getTableName()}] findAll - LocalStorage使用`);
-    return this.getFromLocalStorage().filter((item: any) => item.userId === userId);
-    
-    /* Supabase版（テーブル作成後に有効化）
     if (isSupabaseConfigured() && supabase) {
       const { data, error } = await supabase
         .from(this.getTableName())
@@ -41,26 +36,62 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
       return this.mapFromSupabase(data || []);
     }
     return this.getFromLocalStorage().filter((item: any) => item.userId === userId);
-    */
   }
 
   async findById(id: string): Promise<T | null> {
-    // 一時的にLocalStorageのみ使用
-    console.log(`[${this.getTableName()}] findById - LocalStorage使用`);
+    if (isSupabaseConfigured() && supabase) {
+      const { data, error } = await supabase
+        .from(this.getTableName())
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error || !data) {
+        return this.getFromLocalStorage().find((item: any) => item.id === id) || null;
+      }
+      return this.mapSingleFromSupabase(data);
+    }
     const local = this.getFromLocalStorage().find((item: any) => item.id === id);
     return local || null;
   }
 
   async create(item: Omit<T, 'id' | 'createdAt'> & { id?: string; createdAt?: string; updatedAt?: string }): Promise<T> {
     const now = new Date().toISOString();
-    
-    // 一時的にLocalStorageのみ使用
-    console.log(`[${this.getTableName()}] create - LocalStorage使用`);
+
+    if (isSupabaseConfigured() && supabase) {
+      const payload = this.mapToSupabase({
+        ...item,
+        createdAt: item.createdAt || now,
+        updatedAt: item.updatedAt || now,
+      });
+
+      if (!payload.id) {
+        delete payload.id;
+      }
+
+      const { data, error } = await supabase
+        .from(this.getTableName())
+        .insert(payload)
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        const mapped = this.mapSingleFromSupabase(data);
+        const items = this.getFromLocalStorage();
+        items.push(mapped);
+        this.saveToLocalStorage(items);
+        return mapped;
+      }
+
+      console.error(`Error creating ${this.getTableName()}:`, error);
+    }
+
     const items = this.getFromLocalStorage();
     const newItem = {
       ...item,
       id: item.id || generateId(),
       createdAt: item.createdAt || now,
+      updatedAt: item.updatedAt || now,
     } as unknown as T;
     items.push(newItem);
     this.saveToLocalStorage(items);
@@ -70,8 +101,35 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
   async update(id: string, updates: Partial<T>): Promise<T | null> {
     const now = new Date().toISOString();
 
-    // 一時的にLocalStorageのみ使用
-    console.log(`[${this.getTableName()}] update - LocalStorage使用`);
+    if (isSupabaseConfigured() && supabase) {
+      const payload = this.mapToSupabase({
+        ...updates,
+        updatedAt: now,
+      });
+
+      const { data, error } = await supabase
+        .from(this.getTableName())
+        .update(payload)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        const mapped = this.mapSingleFromSupabase(data);
+        const items = this.getFromLocalStorage();
+        const index = items.findIndex((item: any) => item.id === id);
+        if (index !== -1) {
+          items[index] = mapped;
+        } else {
+          items.push(mapped);
+        }
+        this.saveToLocalStorage(items);
+        return mapped;
+      }
+
+      console.error(`Error updating ${this.getTableName()}:`, error);
+    }
+
     const items = this.getFromLocalStorage();
     const index = items.findIndex((item: any) => item.id === id);
     if (index === -1) return null;
@@ -81,8 +139,22 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
   }
 
   async delete(id: string): Promise<boolean> {
-    // 一時的にLocalStorageのみ使用
-    console.log(`[${this.getTableName()}] delete - LocalStorage使用`);
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase
+        .from(this.getTableName())
+        .delete()
+        .eq('id', id);
+
+      if (!error) {
+        const items = this.getFromLocalStorage();
+        const filtered = items.filter((item: any) => item.id !== id);
+        this.saveToLocalStorage(filtered);
+        return true;
+      }
+
+      console.error(`Error deleting ${this.getTableName()}:`, error);
+    }
+
     const items = this.getFromLocalStorage();
     const filtered = items.filter((item: any) => item.id !== id);
     if (filtered.length === items.length) return false;
