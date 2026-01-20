@@ -312,6 +312,11 @@ export class TestSetRepository {
       if (error) {
         throw new Error(`削除に失敗しました: ${error.message}`);
       }
+      // Supabaseが成功した場合もLocalStorageを同期しておく
+      const sets = this.getLocalSets().filter(s => s.id !== id);
+      this.saveLocalSets(sets);
+      const scores = this.getLocalScores().filter(s => s.testSetId !== id);
+      this.saveLocalScores(scores);
       return;
     }
 

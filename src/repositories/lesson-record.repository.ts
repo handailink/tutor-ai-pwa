@@ -152,6 +152,8 @@ export class LessonRecordRepository {
         this.deleteLocal(id);
         return;
       }
+      // Supabaseが成功した場合もLocalStorageを同期しておく
+      this.deleteLocal(id);
       return;
     }
 
