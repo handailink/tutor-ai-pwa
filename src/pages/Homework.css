@@ -16,12 +16,6 @@
   gap: 12px;
 }
 
-.homework-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .homework-title {
   font-size: 28px;
   font-weight: 600;
@@ -40,16 +34,6 @@
   background: var(--accent);
   color: white;
   font-size: 14px;
-  font-weight: 600;
-  min-height: 44px;
-}
-
-.homework-logout-button {
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 12px;
   font-weight: 600;
   min-height: 44px;
 }
@@ -104,6 +88,12 @@
   border-radius: 10px;
   color: var(--text-primary);
   font-size: 16px;
+}
+
+.homework-form-group input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+  opacity: 0.9;
+  cursor: pointer;
 }
 
 .homework-form-group textarea {
@@ -343,11 +333,6 @@
   .homework-header-row {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .homework-header-actions {
-    width: 100%;
-    justify-content: flex-end;
   }
 
   .homework-form-row {

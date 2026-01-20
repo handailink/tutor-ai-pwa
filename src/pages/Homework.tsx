@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import ja from 'date-fns/locale/ja';
 import { useAuth } from '../contexts/AuthContext';
@@ -56,8 +55,7 @@ const serializeHomeworkDetail = (description: string, todos: TodoItem[]) => {
 };
 
 export const Homework: React.FC = () => {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [homeworks, setHomeworks] = useState<HomeworkType[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -124,16 +122,6 @@ export const Homework: React.FC = () => {
   const handleOpenCreate = () => {
     resetForm();
     setIsFormOpen(true);
-  };
-
-  const handleLogout = async () => {
-    if (!window.confirm('ログアウトしますか？')) return;
-    try {
-      await logout();
-      navigate('/login', { replace: true });
-    } catch {
-      alert('ログアウトに失敗しました。もう一度試してね');
-    }
   };
 
   const handleEdit = (homework: HomeworkType) => {
@@ -308,14 +296,9 @@ export const Homework: React.FC = () => {
       <header className="homework-header">
         <div className="homework-header-row">
           <h1 className="homework-title">宿題管理</h1>
-          <div className="homework-header-actions">
-            <button className="homework-add-button" onClick={handleOpenCreate}>
-              ＋宿題を追加
-            </button>
-            <button type="button" className="homework-logout-button" onClick={handleLogout}>
-              ログアウト
-            </button>
-          </div>
+          <button className="homework-add-button" onClick={handleOpenCreate}>
+            ＋宿題を追加
+          </button>
         </div>
       </header>
 
@@ -329,14 +312,10 @@ export const Homework: React.FC = () => {
               <div className="homework-form-group">
                 <label>日付</label>
                 <input
-                  type="text"
+                  type="date"
                   value={assignedAt}
                   onChange={(e) => setAssignedAt(e.target.value)}
-                  placeholder="2025-12-20"
                   lang="ja"
-                  inputMode="text"
-                  autoCapitalize="none"
-                  spellCheck={false}
                 />
               </div>
             </div>

@@ -16,12 +16,6 @@
   gap: 12px;
 }
 
-.parent-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .parent-title {
   font-size: 28px;
   font-weight: 600;
@@ -40,16 +34,6 @@
   background: var(--accent);
   color: white;
   font-size: 14px;
-  font-weight: 600;
-  min-height: 44px;
-}
-
-.parent-logout-button {
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 12px;
   font-weight: 600;
   min-height: 44px;
 }
@@ -112,6 +96,12 @@
   border-radius: 10px;
   color: var(--text-primary);
   font-size: 16px;
+}
+
+.parent-form-group input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+  opacity: 0.9;
+  cursor: pointer;
 }
 
 .parent-form-group textarea {
@@ -241,11 +231,6 @@
   .parent-header-row {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .parent-header-actions {
-    width: 100%;
-    justify-content: flex-end;
   }
 
   .parent-form-row {
@@ -1393,5 +1378,54 @@
 .lesson-modal-actions button.primary {
   background: var(--accent);
   color: white;
+}
+
+/* 宿題管理に合わせてヘッダー周りを統一 */
+.parent-page {
+  padding: 16px;
+  padding-bottom: 140px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.parent-header {
+  margin-bottom: 20px;
+}
+
+.parent-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.parent-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.parent-add-button {
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 44px;
+}
+
+.parent-empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 40px 20px;
+  font-size: 16px;
+}
+
+@media (max-width: 600px) {
+  .parent-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 

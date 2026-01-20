@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { TestSetRepository } from '../repositories';
@@ -9,8 +8,7 @@ import { generateId } from '../utils/id';
 import './Tests.css';
 
 export const Tests: React.FC = () => {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [testSets, setTestSets] = useState<TestSetWithScores[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('all');
@@ -45,19 +43,30 @@ export const Tests: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleLogout = async () => {
-    if (!window.confirm('ログアウトしますか？')) return;
-    try {
-      await logout();
-      navigate('/login', { replace: true });
-    } catch {
-      alert('ログアウトに失敗しました。もう一度試してね');
-    }
-  };
-
   const handleView = (testSet: TestSetWithScores) => {
     setSelectedSet(testSet);
     setActiveTab('detail');
+  };
+
+  const handleEdit = (testSet: TestSetWithScores) => {
+    setSelectedSet(testSet);
+    setShowModal(true);
+  };
+
+  const handleDelete = async (testSet: TestSetWithScores) => {
+    if (!window.confirm('このテスト結果を削除しますか？')) return;
+    const optimistic = testSets.filter((set) => set.id !== testSet.id);
+    setTestSets(optimistic);
+    if (selectedSet?.id === testSet.id) {
+      setSelectedSet(null);
+      setActiveTab('list');
+    }
+    try {
+      await testRepository.deleteTestSet(testSet.id);
+    } catch (error) {
+      alert('削除に失敗しました。');
+      loadTestSets();
+    }
   };
 
   const handleSave = async (
@@ -80,23 +89,30 @@ export const Tests: React.FC = () => {
     selectedProject === 'all'
       ? null
       : projects.find((p) => p.id === selectedProject)?.name || null;
-  const filteredSets =
-    selectedProjectName === null
-      ? testSets
-      : testSets.filter((set) => set.scores.some((score) => score.subject === selectedProjectName));
+  const isSubjectFiltered = selectedProject !== 'all';
+  const filteredSets = isSubjectFiltered
+    ? testSets.filter((set) =>
+        set.scores.some(
+          (score) =>
+            score.subject === selectedProjectName || score.subject === selectedProject
+        )
+      )
+    : testSets;
+  const getFilteredScores = (scores: TestSetWithScores['scores']) =>
+    isSubjectFiltered
+      ? scores.filter(
+          (score) =>
+            score.subject === selectedProjectName || score.subject === selectedProject
+        )
+      : scores;
 
   return (
     <div className="tests-page">
       <header className="tests-header">
         <h1 className="tests-title">テスト結果</h1>
-        <div className="tests-header-actions">
-          <button className="tests-add-button" onClick={handleCreate}>
-            + 追加
-          </button>
-          <button type="button" className="tests-logout-button" onClick={handleLogout}>
-            ログアウト
-          </button>
-        </div>
+        <button className="tests-add-button" onClick={handleCreate}>
+          + 追加
+        </button>
       </header>
 
       <div className="tests-filters">
@@ -134,11 +150,39 @@ export const Tests: React.FC = () => {
                         {testSet.grade && <span className="tests-tags">{testSet.grade}</span>}
                       </div>
                     </div>
-                    <div className="tests-set-count">{testSet.scores.length}教科</div>
+                    <div className="tests-item-actions">
+                      <div className="tests-set-count">
+                        {getFilteredScores(testSet.scores).length}教科
+                      </div>
+                      {!isSubjectFiltered && (
+                        <>
+                          <button
+                            type="button"
+                            className="tests-edit-button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEdit(testSet);
+                            }}
+                          >
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            className="tests-delete-button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(testSet);
+                            }}
+                          >
+                            削除
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  {testSet.scores.length > 0 && (
+                  {getFilteredScores(testSet.scores).length > 0 && (
                     <div className="tests-set-scores">
-                      {testSet.scores.map((score) => (
+                      {getFilteredScores(testSet.scores).map((score) => (
                         <div key={score.id} className="tests-set-score">
                           <span>{score.subject}</span>
                           <span>
@@ -165,9 +209,29 @@ export const Tests: React.FC = () => {
             ← 戻る
           </button>
           <div className="tests-detail-content">
-            <h2 className="tests-detail-title">
-              {selectedSet.name}
-            </h2>
+            <div className="tests-detail-header">
+              <h2 className="tests-detail-title">
+                {selectedSet.name}
+              </h2>
+              {!isSubjectFiltered && (
+                <div className="tests-detail-actions">
+                  <button
+                    type="button"
+                    className="tests-edit-button"
+                    onClick={() => handleEdit(selectedSet)}
+                  >
+                    編集
+                  </button>
+                  <button
+                    type="button"
+                    className="tests-delete-button"
+                    onClick={() => handleDelete(selectedSet)}
+                  >
+                    削除
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="tests-detail-meta">
               <p>実施日: {selectedSet.date}</p>
               {selectedSet.grade && <p>学年: {selectedSet.grade}</p>}
@@ -175,11 +239,11 @@ export const Tests: React.FC = () => {
             </div>
             <div className="tests-detail-scores">
               <h3>教科ごとの結果</h3>
-              {selectedSet.scores.length === 0 ? (
+              {getFilteredScores(selectedSet.scores).length === 0 ? (
                 <p className="tests-detail-empty">まだ教科の結果がありません</p>
               ) : (
                 <div className="tests-detail-score-list">
-                  {selectedSet.scores.map((score) => (
+                  {getFilteredScores(selectedSet.scores).map((score) => (
                     <div key={score.id} className="tests-detail-score">
                       <div className="tests-detail-score-subject">{score.subject}</div>
                       <div className="tests-detail-score-values">
@@ -326,17 +390,13 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
             />
           </div>
           <div className="tests-form-group">
-            <label>実施日（例: 2025-12-25）</label>
+            <label>実施日</label>
             <input
-              type="text"
+              type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              placeholder="2025-12-25"
               required
               lang="ja"
-              inputMode="text"
-              autoCapitalize="none"
-              spellCheck={false}
             />
           </div>
           <div className="tests-form-group">

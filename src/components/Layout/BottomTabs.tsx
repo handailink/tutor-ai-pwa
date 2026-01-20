@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import './BottomTabs.css';
 
 type TabItem = {
@@ -17,6 +18,17 @@ const TABS: TabItem[] = [
 export const BottomTabs: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    if (!window.confirm('ログアウトしますか？')) return;
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      alert('ログアウトに失敗しました。もう一度試してね');
+    }
+  };
 
   return (
     <nav className="bottom-tabs" aria-label="メインナビゲーション">
@@ -35,6 +47,15 @@ export const BottomTabs: React.FC = () => {
           </button>
         );
       })}
+      <button
+        type="button"
+        className="bottom-tab bottom-tab-logout"
+        onClick={handleLogout}
+        aria-label="ログアウト"
+      >
+        <span className="bottom-tab-icon" aria-hidden="true">🚪</span>
+        <span className="bottom-tab-label">ログアウト</span>
+      </button>
     </nav>
   );
 };

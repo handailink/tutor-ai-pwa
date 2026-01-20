@@ -40,3 +40,19 @@
   font-weight: 500;
 }
 
+.bottom-tab-logout {
+  flex: 0 0 76px;
+  min-height: 60px;
+  padding: 8px 4px;
+  color: var(--text-secondary);
+}
+
+.bottom-tab-logout .bottom-tab-icon {
+  font-size: 18px;
+}
+
+.bottom-tab-logout .bottom-tab-label {
+  font-size: 10px;
+  font-weight: 600;
+}
+
