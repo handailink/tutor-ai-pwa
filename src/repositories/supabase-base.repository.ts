@@ -5,7 +5,13 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
  * Supabase対応の非同期ベースリポジトリ
  * Supabase優先で保存し、失敗時はLocalStorageにフォールバック
  */
-export abstract class SupabaseBaseRepository<T extends { id: string }> {
+type BaseEntity = {
+  id: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export abstract class SupabaseBaseRepository<T extends BaseEntity> {
   protected abstract getTableName(): string;
   protected abstract getStorageKey(): string;
 
@@ -55,7 +61,10 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
     return local || null;
   }
 
-  async create(item: Omit<T, 'id' | 'createdAt'> & { id?: string; createdAt?: string; updatedAt?: string }): Promise<T> {
+  async create(
+    item: Omit<T, 'id' | 'createdAt' | 'updatedAt'> &
+      Partial<Pick<T, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Promise<T> {
     const now = new Date().toISOString();
 
     if (isSupabaseConfigured() && supabase) {
@@ -171,4 +180,3 @@ export abstract class SupabaseBaseRepository<T extends { id: string }> {
   protected abstract mapSingleFromSupabase(data: any): T;
   protected abstract mapToSupabase(item: Partial<T>): any;
 }
-
