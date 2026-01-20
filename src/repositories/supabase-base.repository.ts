@@ -72,7 +72,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
         ...item,
         createdAt: item.createdAt || now,
         updatedAt: item.updatedAt || now,
-      });
+      } as Partial<T>);
 
       if (!payload.id) {
         delete payload.id;
@@ -114,7 +114,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
       const payload = this.mapToSupabase({
         ...updates,
         updatedAt: now,
-      });
+      } as Partial<T>);
 
       const { data, error } = await supabase
         .from(this.getTableName())
