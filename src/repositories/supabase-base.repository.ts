@@ -15,6 +15,12 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
   protected abstract getTableName(): string;
   protected abstract getStorageKey(): string;
 
+  private async hasSupabaseSession(): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    const { data } = await supabase.auth.getSession();
+    return !!data.session?.user;
+  }
+
   // LocalStorage フォールバック用
   protected getFromLocalStorage(): T[] {
     const data = localStorage.getItem(this.getStorageKey());
@@ -27,7 +33,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
 
   // Supabase対応メソッド
   async findAll(userId: string): Promise<T[]> {
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && (await this.hasSupabaseSession())) {
       const { data, error } = await supabase
         .from(this.getTableName())
         .select('*')
@@ -45,7 +51,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
   }
 
   async findById(id: string): Promise<T | null> {
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && (await this.hasSupabaseSession())) {
       const { data, error } = await supabase
         .from(this.getTableName())
         .select('*')
@@ -67,7 +73,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
   ): Promise<T> {
     const now = new Date().toISOString();
 
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && (await this.hasSupabaseSession())) {
       const payload = this.mapToSupabase({
         ...item,
         createdAt: item.createdAt || now,
@@ -110,7 +116,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
   async update(id: string, updates: Partial<T>): Promise<T | null> {
     const now = new Date().toISOString();
 
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && (await this.hasSupabaseSession())) {
       const payload = this.mapToSupabase({
         ...updates,
         updatedAt: now,
@@ -148,7 +154,7 @@ export abstract class SupabaseBaseRepository<T extends BaseEntity> {
   }
 
   async delete(id: string): Promise<boolean> {
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && (await this.hasSupabaseSession())) {
       const { error } = await supabase
         .from(this.getTableName())
         .delete()

@@ -52,25 +52,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       supabase.auth.getSession().then(async ({ data: { session } }) => {
         console.log('[AuthContext] セッション取得:', session ? 'あり' : 'なし');
         if (session?.user) {
-          // ローカルのUserを作成/取得
-          let localUser = userRepositoryRef.current.findByEmail(session.user.email || '');
-          if (!localUser) {
-            localUser = userRepositoryRef.current.createUserWithId(
-              session.user.id,
-              session.user.email || ''
-            );
-          }
-          console.log('[AuthContext] ユーザー設定:', localUser.email);
+          // Supabase Auth の UID を使ってユーザーを作成/更新
+          // 古いLocalStorageユーザーがあっても、Supabase Auth の UID に合わせる
+          const localUser: User = {
+            id: session.user.id, // 必ず Supabase Auth の UID を使う
+            email: session.user.email || '',
+            createdAt: new Date().toISOString(),
+          };
+          console.log('[AuthContext] ユーザー設定:', localUser.email, 'ID:', localUser.id);
           setUser(localUser);
           localStorage.setItem('tutor_ai_current_user', JSON.stringify(localUser));
           // デフォルトプロジェクトを初期化
           await initializeProjectsOnce(localUser.id);
         } else {
-          // ローカルストレージからユーザーを取得（フォールバック）
-          console.log('[AuthContext] LocalStorageフォールバック');
-          const storedUser = authServiceRef.current.getCurrentUser();
-          console.log('[AuthContext] LocalStorageユーザー:', storedUser?.email || 'なし');
-          setUser(storedUser);
+          // Supabase運用時はセッションが無い場合ログインを要求
+          console.log('[AuthContext] Supabaseセッションなし: ログインが必要です');
+          setUser(null);
+          localStorage.removeItem('tutor_ai_current_user');
         }
         clearTimeout(timeoutId);
         setLoading(false);
@@ -86,13 +84,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           console.log('[Auth] onAuthStateChange:', event, session?.user?.email);
           
           if (event === 'SIGNED_IN' && session?.user) {
-            let localUser = userRepositoryRef.current.findByEmail(session.user.email || '');
-            if (!localUser) {
-              localUser = userRepositoryRef.current.createUserWithId(
-                session.user.id,
-                session.user.email || ''
-              );
-            }
+            // Supabase Auth の UID を使ってユーザーを設定
+            const localUser: User = {
+              id: session.user.id,
+              email: session.user.email || '',
+              createdAt: new Date().toISOString(),
+            };
             setUser(localUser);
             localStorage.setItem('tutor_ai_current_user', JSON.stringify(localUser));
             // デフォルトプロジェクトを初期化
@@ -116,6 +113,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const currentUser = await authServiceRef.current.restoreSession();
           console.log('[AuthContext] セッション復元:', currentUser?.email || 'なし');
           setUser(currentUser);
+          if (currentUser) {
+            await initializeProjectsOnce(currentUser.id);
+          }
         } catch (error) {
           console.error('[Auth] セッション復元エラー:', error);
           setUser(null);

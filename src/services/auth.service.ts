@@ -28,11 +28,12 @@ export class AuthService {
       }
 
       if (data.user) {
-        // ローカルのUserRepositoryにも保存
-        let localUser = this.userRepository.findByEmail(email);
-        if (!localUser) {
-          localUser = this.userRepository.createUserWithId(data.user.id, email);
-        }
+        // Supabase Auth の UID を必ず使う（古いLocalStorageユーザーのIDは無視）
+        const localUser: User = {
+          id: data.user.id,
+          email: data.user.email || email,
+          createdAt: new Date().toISOString(),
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localUser));
         return localUser;
       }
@@ -101,10 +102,12 @@ export class AuthService {
     if (isSupabaseConfigured() && supabase) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        let localUser = this.userRepository.findByEmail(session.user.email || '');
-        if (!localUser) {
-          localUser = this.userRepository.createUserWithId(session.user.id, session.user.email || '');
-        }
+        // Supabase Auth の UID を必ず使う
+        const localUser: User = {
+          id: session.user.id,
+          email: session.user.email || '',
+          createdAt: new Date().toISOString(),
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localUser));
         return localUser;
       }

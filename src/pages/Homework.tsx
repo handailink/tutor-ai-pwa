@@ -75,7 +75,7 @@ export const Homework: React.FC = () => {
 
   const loadProjects = useCallback(async () => {
     if (!user) return;
-    const projs = await projectService.getProjectsByUserId(user.id);
+    const projs = await projectService.initializeDefaultProjects(user.id);
     setProjects(projs);
   }, [user, projectService]);
 
