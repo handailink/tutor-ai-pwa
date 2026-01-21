@@ -37,22 +37,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     console.log('[AuthContext] 初期化開始');
     console.log('[AuthContext] Supabase設定状態:', isSupabaseConfigured());
     
-    // タイムアウト保護：10秒後に強制的にloading解除
-    const timeoutId = setTimeout(() => {
-      console.warn('[AuthContext] タイムアウト: loading を強制解除');
-      // タイムアウト時はLocalStorageからユーザーを復元
-      const storedUser = localStorage.getItem('tutor_ai_current_user');
-      if (storedUser) {
-        try {
-          const parsed = JSON.parse(storedUser);
-          console.log('[AuthContext] タイムアウト時のユーザー復元:', parsed.email);
-          setUser(parsed);
-        } catch (e) {
-          console.error('[AuthContext] ユーザー復元エラー:', e);
-        }
+    let isMounted = true;
+    let loadingResolved = false;
+    
+    // loading解除を一度だけ行うヘルパー
+    const resolveLoading = () => {
+      if (!loadingResolved && isMounted) {
+        loadingResolved = true;
+        setLoading(false);
       }
-      setLoading(false);
-    }, 10000);
+    };
+    
+    // タイムアウト保護：5秒後に強制的にloading解除
+    const timeoutId = setTimeout(() => {
+      if (!loadingResolved) {
+        console.warn('[AuthContext] タイムアウト: loading を強制解除');
+        // タイムアウト時はLocalStorageからユーザーを復元
+        const storedUser = localStorage.getItem('tutor_ai_current_user');
+        if (storedUser && isMounted) {
+          try {
+            const parsed = JSON.parse(storedUser);
+            console.log('[AuthContext] タイムアウト時のユーザー復元:', parsed.email);
+            setUser(parsed);
+          } catch (e) {
+            console.error('[AuthContext] ユーザー復元エラー:', e);
+          }
+        }
+        resolveLoading();
+      }
+    }, 5000);
     
     // Supabase Auth セッションを監視
     if (isSupabaseConfigured() && supabase) {
@@ -62,29 +75,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.log('[AuthContext] セッション取得:', session ? 'あり' : 'なし');
         if (session?.user) {
           // Supabase Auth の UID を使ってユーザーを作成/更新
-          // 古いLocalStorageユーザーがあっても、Supabase Auth の UID に合わせる
           const localUser: User = {
-            id: session.user.id, // 必ず Supabase Auth の UID を使う
+            id: session.user.id,
             email: session.user.email || '',
             createdAt: new Date().toISOString(),
           };
           console.log('[AuthContext] ユーザー設定:', localUser.email, 'ID:', localUser.id);
-          setUser(localUser);
+          if (isMounted) {
+            setUser(localUser);
+          }
           localStorage.setItem('tutor_ai_current_user', JSON.stringify(localUser));
-          // デフォルトプロジェクトを初期化
-          await initializeProjectsOnce(localUser.id);
+          // 先にloading解除してからプロジェクト初期化（UIをブロックしない）
+          clearTimeout(timeoutId);
+          resolveLoading();
+          // デフォルトプロジェクトを初期化（バックグラウンドで）
+          initializeProjectsOnce(localUser.id).catch(console.error);
         } else {
           // Supabase運用時はセッションが無い場合ログインを要求
           console.log('[AuthContext] Supabaseセッションなし: ログインが必要です');
-          setUser(null);
+          if (isMounted) {
+            setUser(null);
+          }
           localStorage.removeItem('tutor_ai_current_user');
+          clearTimeout(timeoutId);
+          resolveLoading();
         }
-        clearTimeout(timeoutId);
-        setLoading(false);
       }).catch((error) => {
         console.error('[AuthContext] セッション取得エラー:', error);
         clearTimeout(timeoutId);
-        setLoading(false);
+        resolveLoading();
       });
 
       // セッション変更を監視
@@ -99,21 +118,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               email: session.user.email || '',
               createdAt: new Date().toISOString(),
             };
-            setUser(localUser);
+            if (isMounted) {
+              setUser(localUser);
+            }
             localStorage.setItem('tutor_ai_current_user', JSON.stringify(localUser));
             // タイムアウトをクリアして loading を解除
             clearTimeout(timeoutId);
-            setLoading(false);
-            // デフォルトプロジェクトを初期化
-            await initializeProjectsOnce(localUser.id);
+            resolveLoading();
+            // デフォルトプロジェクトを初期化（バックグラウンドで）
+            initializeProjectsOnce(localUser.id).catch(console.error);
           } else if (event === 'SIGNED_OUT') {
-            setUser(null);
+            console.log('[Auth] ログアウト完了');
+            if (isMounted) {
+              setUser(null);
+            }
             localStorage.removeItem('tutor_ai_current_user');
           }
         }
       );
 
       return () => {
+        isMounted = false;
         clearTimeout(timeoutId);
         subscription.unsubscribe();
       };
@@ -124,19 +149,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
           const currentUser = await authServiceRef.current.restoreSession();
           console.log('[AuthContext] セッション復元:', currentUser?.email || 'なし');
-          setUser(currentUser);
+          if (isMounted) {
+            setUser(currentUser);
+          }
           if (currentUser) {
-            await initializeProjectsOnce(currentUser.id);
+            initializeProjectsOnce(currentUser.id).catch(console.error);
           }
         } catch (error) {
           console.error('[Auth] セッション復元エラー:', error);
-          setUser(null);
+          if (isMounted) {
+            setUser(null);
+          }
         } finally {
           clearTimeout(timeoutId);
-          setLoading(false);
+          resolveLoading();
         }
       };
       initAuth();
+      
+      return () => {
+        isMounted = false;
+        clearTimeout(timeoutId);
+      };
     }
   }, [initializeProjectsOnce]);
 

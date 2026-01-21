@@ -87,10 +87,17 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
+    console.log('[AuthService] logout開始');
     if (isSupabaseConfigured() && supabase) {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('[AuthService] Supabaseログアウトエラー:', error.message);
+        throw new Error(error.message);
+      }
+      console.log('[AuthService] Supabaseログアウト成功');
     }
     localStorage.removeItem(CURRENT_USER_KEY);
+    console.log('[AuthService] LocalStorage削除完了');
   }
 
   isAuthenticated(): boolean {

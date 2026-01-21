@@ -5,36 +5,45 @@ import { generateId } from '../utils/id';
 const STORAGE_KEY = 'tutor_ai_lesson_records';
 
 export class LessonRecordRepository {
+  // Supabaseセッションが有効かチェック
+  private async hasValidSession(): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    try {
+      const { data } = await supabase.auth.getSession();
+      return !!data.session?.user;
+    } catch {
+      return false;
+    }
+  }
+
   async findByUserId(userId: string): Promise<LessonRecord[]> {
     const localRecords = this.getLocal().filter(r => r.userId === userId)
       .sort((a, b) => b.date.localeCompare(a.date));
 
-    if (isSupabaseConfigured() && supabase) {
-      const { data, error } = await supabase
+    if (await this.hasValidSession()) {
+      const { data, error } = await supabase!
         .from('lesson_records')
         .select('*')
         .eq('user_id', userId)
         .order('date', { ascending: false });
 
       if (error) {
-        console.error('Error fetching lesson_records:', error);
+        console.error('[LessonRecordRepository] findByUserId error:', error.message, error.code);
         return localRecords;
       }
 
-      if (!data || data.length === 0) {
-        return localRecords;
-      }
-
+      console.log('[LessonRecordRepository] findByUserId success:', data?.length || 0, '件');
       return (data || []).map(this.mapFromSupabase);
     }
 
     // LocalStorageフォールバック
+    console.log('[LessonRecordRepository] LocalStorageフォールバック使用');
     return localRecords;
   }
 
   async findById(id: string): Promise<LessonRecord | null> {
-    if (isSupabaseConfigured() && supabase) {
-      const { data, error } = await supabase
+    if (await this.hasValidSession()) {
+      const { data, error } = await supabase!
         .from('lesson_records')
         .select('*')
         .eq('id', id)
@@ -49,8 +58,8 @@ export class LessonRecordRepository {
   }
 
   async findByDate(userId: string, date: string): Promise<LessonRecord | null> {
-    if (isSupabaseConfigured() && supabase) {
-      const { data, error } = await supabase
+    if (await this.hasValidSession()) {
+      const { data, error } = await supabase!
         .from('lesson_records')
         .select('*')
         .eq('user_id', userId)
@@ -76,8 +85,8 @@ export class LessonRecordRepository {
   ): Promise<LessonRecord> {
     const now = new Date().toISOString();
 
-    if (isSupabaseConfigured() && supabase) {
-      const { data: record, error } = await supabase
+    if (await this.hasValidSession()) {
+      const { data: record, error } = await supabase!
         .from('lesson_records')
         .insert({
           user_id: userId,
@@ -90,15 +99,16 @@ export class LessonRecordRepository {
         .single();
 
       if (!error && record) {
+        console.log('[LessonRecordRepository] create success:', record.id);
         return this.mapFromSupabase(record);
       }
-      console.error('Error creating lesson_records:', error);
-      // フォールバック
-      return this.createLocal(userId, data, now);
-
+      console.error('[LessonRecordRepository] create error:', error?.message, error?.code);
+      // エラーをスローして呼び出し元に通知
+      throw new Error(error?.message || '保存に失敗しました');
     }
 
     // LocalStorageフォールバック
+    console.log('[LessonRecordRepository] createLocal フォールバック');
     return this.createLocal(userId, data, now);
   }
 
@@ -113,8 +123,8 @@ export class LessonRecordRepository {
   ): Promise<LessonRecord | null> {
     const now = new Date().toISOString();
 
-    if (isSupabaseConfigured() && supabase) {
-      const { data: record, error } = await supabase
+    if (await this.hasValidSession()) {
+      const { data: record, error } = await supabase!
         .from('lesson_records')
         .update({
           date: data.date,
@@ -128,36 +138,35 @@ export class LessonRecordRepository {
         .single();
 
       if (!error && record) {
+        console.log('[LessonRecordRepository] update success:', id);
         return this.mapFromSupabase(record);
       }
-      console.error('Error updating lesson_records:', error);
-      // フォールバック
-      return this.updateLocal(id, data, now);
+      console.error('[LessonRecordRepository] update error:', error?.message, error?.code);
+      throw new Error(error?.message || '更新に失敗しました');
     }
 
     // LocalStorageフォールバック
+    console.log('[LessonRecordRepository] updateLocal フォールバック');
     return this.updateLocal(id, data, now);
   }
 
   async delete(id: string): Promise<void> {
-    if (isSupabaseConfigured() && supabase) {
-      const { error } = await supabase
+    if (await this.hasValidSession()) {
+      const { error } = await supabase!
         .from('lesson_records')
         .delete()
         .eq('id', id);
 
       if (error) {
-        console.error('Error deleting lesson_records:', error);
-        // フォールバック
-        this.deleteLocal(id);
-        return;
+        console.error('[LessonRecordRepository] delete error:', error.message, error.code);
+        throw new Error(error.message || '削除に失敗しました');
       }
-      // Supabaseが成功した場合もLocalStorageを同期しておく
-      this.deleteLocal(id);
+      console.log('[LessonRecordRepository] delete success:', id);
       return;
     }
 
     // LocalStorageフォールバック
+    console.log('[LessonRecordRepository] deleteLocal フォールバック');
     this.deleteLocal(id);
   }
 
