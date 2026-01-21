@@ -37,11 +37,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     console.log('[AuthContext] 初期化開始');
     console.log('[AuthContext] Supabase設定状態:', isSupabaseConfigured());
     
-    // タイムアウト保護：5秒後に強制的にloading解除
+    // タイムアウト保護：10秒後に強制的にloading解除
     const timeoutId = setTimeout(() => {
       console.warn('[AuthContext] タイムアウト: loading を強制解除');
+      // タイムアウト時はLocalStorageからユーザーを復元
+      const storedUser = localStorage.getItem('tutor_ai_current_user');
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          console.log('[AuthContext] タイムアウト時のユーザー復元:', parsed.email);
+          setUser(parsed);
+        } catch (e) {
+          console.error('[AuthContext] ユーザー復元エラー:', e);
+        }
+      }
       setLoading(false);
-    }, 5000);
+    }, 10000);
     
     // Supabase Auth セッションを監視
     if (isSupabaseConfigured() && supabase) {
