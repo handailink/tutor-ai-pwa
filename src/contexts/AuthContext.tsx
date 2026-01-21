@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { AuthService, ProjectService } from '../services';
 import { User } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { UserRepository } from '../repositories';
 
 interface AuthContextType {
   user: User | null;
@@ -18,7 +17,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const authServiceRef = useRef<AuthService>(new AuthService());
-  const userRepositoryRef = useRef<UserRepository>(new UserRepository());
   const projectServiceRef = useRef<ProjectService>(new ProjectService());
   const projectsInitializedRef = useRef<Set<string>>(new Set());
 
