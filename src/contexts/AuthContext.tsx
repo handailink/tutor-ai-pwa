@@ -101,6 +101,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             };
             setUser(localUser);
             localStorage.setItem('tutor_ai_current_user', JSON.stringify(localUser));
+            // タイムアウトをクリアして loading を解除
+            clearTimeout(timeoutId);
+            setLoading(false);
             // デフォルトプロジェクトを初期化
             await initializeProjectsOnce(localUser.id);
           } else if (event === 'SIGNED_OUT') {
