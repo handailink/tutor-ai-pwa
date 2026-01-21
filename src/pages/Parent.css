@@ -1428,3 +1428,43 @@
     align-items: flex-start;
   }
 }
+
+/* time picker スタイル */
+.parent-form-group input[type='time'] {
+  min-height: 44px;
+}
+
+.parent-form-group input[type='time']::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+  opacity: 0.9;
+  cursor: pointer;
+}
+
+/* エラーメッセージ */
+.parent-form-error {
+  color: #ef4444;
+  font-size: 14px;
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+}
+
+/* 計算された授業時間表示 */
+.parent-form-duration {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 8px;
+}
+
+/* カード内の時間（分）表示 */
+.parent-card-duration {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}

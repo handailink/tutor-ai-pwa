@@ -33,7 +33,7 @@ export class LessonRecordRepository {
       }
 
       console.log('[LessonRecordRepository] findByUserId success:', data?.length || 0, '件');
-      return (data || []).map(this.mapFromSupabase);
+      return (data || []).map((item) => this.mapFromSupabase(item));
     }
 
     // LocalStorageフォールバック
@@ -79,6 +79,8 @@ export class LessonRecordRepository {
     data: {
       date: string;
       duration: number;
+      startTime?: string;
+      endTime?: string;
       content: string;
       memo?: string;
     }
@@ -86,21 +88,22 @@ export class LessonRecordRepository {
     const now = new Date().toISOString();
 
     if (await this.hasValidSession()) {
-      const { data: record, error } = await supabase!
+      const { data: records, error } = await supabase!
         .from('lesson_records')
         .insert({
           user_id: userId,
           date: data.date,
           duration: data.duration,
+          start_time: data.startTime || null,
+          end_time: data.endTime || null,
           content: data.content,
           memo: data.memo,
         })
-        .select()
-        .single();
+        .select();
 
-      if (!error && record) {
-        console.log('[LessonRecordRepository] create success:', record.id);
-        return this.mapFromSupabase(record);
+      if (!error && records && records.length > 0) {
+        console.log('[LessonRecordRepository] create success:', records[0].id);
+        return this.mapFromSupabase(records[0]);
       }
       console.error('[LessonRecordRepository] create error:', error?.message, error?.code);
       // エラーをスローして呼び出し元に通知
@@ -117,6 +120,8 @@ export class LessonRecordRepository {
     data: {
       date: string;
       duration: number;
+      startTime?: string;
+      endTime?: string;
       content: string;
       memo?: string;
     }
@@ -124,22 +129,23 @@ export class LessonRecordRepository {
     const now = new Date().toISOString();
 
     if (await this.hasValidSession()) {
-      const { data: record, error } = await supabase!
+      const { data: records, error } = await supabase!
         .from('lesson_records')
         .update({
           date: data.date,
           duration: data.duration,
+          start_time: data.startTime || null,
+          end_time: data.endTime || null,
           content: data.content,
           memo: data.memo,
           updated_at: now,
         })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
 
-      if (!error && record) {
+      if (!error && records && records.length > 0) {
         console.log('[LessonRecordRepository] update success:', id);
-        return this.mapFromSupabase(record);
+        return this.mapFromSupabase(records[0]);
       }
       console.error('[LessonRecordRepository] update error:', error?.message, error?.code);
       throw new Error(error?.message || '更新に失敗しました');
@@ -178,11 +184,19 @@ export class LessonRecordRepository {
       userId: data.user_id,
       date: data.date,
       duration: data.duration,
+      startTime: data.start_time ? this.formatTimeFromDB(data.start_time) : undefined,
+      endTime: data.end_time ? this.formatTimeFromDB(data.end_time) : undefined,
       content: data.content,
       memo: data.memo,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };
+  }
+
+  // DBのtime型（HH:MM:SS）をHH:MM形式に変換
+  private formatTimeFromDB(time: string): string {
+    // "18:00:00" -> "18:00"
+    return time.substring(0, 5);
   }
 
   // ========== LocalStorage Helpers ==========
@@ -202,7 +216,7 @@ export class LessonRecordRepository {
 
   private createLocal(
     userId: string,
-    data: { date: string; duration: number; content: string; memo?: string },
+    data: { date: string; duration: number; startTime?: string; endTime?: string; content: string; memo?: string },
     now: string
   ): LessonRecord {
     const newRecord: LessonRecord = {
@@ -210,6 +224,8 @@ export class LessonRecordRepository {
       userId,
       date: data.date,
       duration: data.duration,
+      startTime: data.startTime,
+      endTime: data.endTime,
       content: data.content,
       memo: data.memo,
       createdAt: now,
@@ -224,7 +240,7 @@ export class LessonRecordRepository {
 
   private updateLocal(
     id: string,
-    data: { date: string; duration: number; content: string; memo?: string },
+    data: { date: string; duration: number; startTime?: string; endTime?: string; content: string; memo?: string },
     now: string
   ): LessonRecord | null {
     const records = this.getLocal();
@@ -235,6 +251,8 @@ export class LessonRecordRepository {
       ...records[index],
       date: data.date,
       duration: data.duration,
+      startTime: data.startTime,
+      endTime: data.endTime,
       content: data.content,
       memo: data.memo,
       updatedAt: now,

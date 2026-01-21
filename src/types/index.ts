@@ -114,7 +114,9 @@ export interface LessonRecord {
   id: string;
   userId: string;
   date: string;           // 授業日（例: 2025-12-20）
-  duration: number;       // 授業時間（分）
+  duration: number;       // 授業時間（分）- 給与計算で使用
+  startTime?: string;     // 開始時刻（例: "18:00"）
+  endTime?: string;       // 終了時刻（例: "20:00"）
   content: string;        // 授業内容
   memo?: string;          // メモ（任意）
   createdAt: string;

@@ -31,7 +31,7 @@ export const Login: React.FC = () => {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1 className="auth-title">家庭教師AI</h1>
+        <h1 className="auth-title">Link学習管理</h1>
         <p className="auth-subtitle">ログイン</p>
 
         <form onSubmit={handleSubmit} className="auth-form">
@@ -43,7 +43,6 @@ export const Login: React.FC = () => {
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               required
-              placeholder="u404882b"
               autoComplete="username"
               lang="ja"
               autoCapitalize="none"
@@ -59,7 +58,6 @@ export const Login: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              placeholder="••••••••"
               autoComplete="current-password"
             />
           </div>

@@ -6,6 +6,29 @@ import { LessonRecordRepository } from '../repositories';
 import { LessonRecord } from '../types';
 import './Parent.css';
 
+/**
+ * 開始時刻と終了時刻から授業時間（分）を計算
+ */
+function calculateDuration(startTime: string, endTime: string): number {
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+  return endMinutes - startMinutes;
+}
+
+/**
+ * 授業時間の表示フォーマット
+ * - start/endがある場合: "18:00〜20:00"
+ * - ない場合: "60分"
+ */
+function formatLessonTime(lesson: LessonRecord): string {
+  if (lesson.startTime && lesson.endTime) {
+    return `${lesson.startTime}〜${lesson.endTime}`;
+  }
+  return `${lesson.duration}分`;
+}
+
 export const Parent: React.FC = () => {
   const { user } = useAuth();
   const [lessonRecords, setLessonRecords] = useState<LessonRecord[]>([]);
@@ -13,9 +36,11 @@ export const Parent: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [date, setDate] = useState('');
-  const [duration, setDuration] = useState('60');
+  const [startTime, setStartTime] = useState('18:00');
+  const [endTime, setEndTime] = useState('20:00');
   const [content, setContent] = useState('');
   const [memo, setMemo] = useState('');
+  const [timeError, setTimeError] = useState('');
 
   const lessonRecordRepository = useMemo(() => new LessonRecordRepository(), []);
 
@@ -50,10 +75,12 @@ export const Parent: React.FC = () => {
 
   const resetForm = () => {
     setDate(format(new Date(), 'yyyy-MM-dd'));
-    setDuration('60');
+    setStartTime('18:00');
+    setEndTime('20:00');
     setContent('');
     setMemo('');
     setEditingId(null);
+    setTimeError('');
   };
 
   const handleOpenCreate = () => {
@@ -63,24 +90,55 @@ export const Parent: React.FC = () => {
 
   const handleEdit = (lesson: LessonRecord) => {
     setDate(lesson.date || format(new Date(), 'yyyy-MM-dd'));
-    setDuration(String(lesson.duration || 60));
+    // start/endがある場合はそれを使用、なければデフォルト
+    setStartTime(lesson.startTime || '18:00');
+    setEndTime(lesson.endTime || '20:00');
     setContent(lesson.content || '');
     setMemo(lesson.memo || '');
     setEditingId(lesson.id);
+    setTimeError('');
     setIsFormOpen(true);
+  };
+
+  // 時刻バリデーション
+  const validateTime = useCallback((start: string, end: string): boolean => {
+    const duration = calculateDuration(start, end);
+    if (duration <= 0) {
+      setTimeError('終了時刻は開始時刻より後にしてください');
+      return false;
+    }
+    setTimeError('');
+    return true;
+  }, []);
+
+  const handleStartTimeChange = (value: string) => {
+    setStartTime(value);
+    validateTime(value, endTime);
+  };
+
+  const handleEndTimeChange = (value: string) => {
+    setEndTime(value);
+    validateTime(startTime, value);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!date.trim() || !duration.trim() || !content.trim()) {
-      alert('日付、授業時間、授業内容を入力してください');
+    if (!date.trim() || !content.trim()) {
+      alert('日付と授業内容を入力してください');
+      return;
+    }
+    if (!validateTime(startTime, endTime)) {
       return;
     }
 
+    const duration = calculateDuration(startTime, endTime);
+
     const payload = {
       date: date.trim(),
-      duration: parseInt(duration, 10),
+      duration,
+      startTime,
+      endTime,
       content: content.trim(),
       memo: memo.trim() ? memo.trim() : undefined,
     };
@@ -130,26 +188,39 @@ export const Parent: React.FC = () => {
             {editingId ? '授業記録を編集' : '授業記録を追加'}
           </h2>
           <form className="parent-form" onSubmit={handleSave}>
+            <div className="parent-form-group">
+              <label>授業日</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                lang="ja"
+              />
+            </div>
             <div className="parent-form-row">
               <div className="parent-form-group">
-                <label>授業日</label>
+                <label>開始時刻</label>
                 <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  lang="ja"
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => handleStartTimeChange(e.target.value)}
                 />
               </div>
               <div className="parent-form-group">
-                <label>授業時間（分）</label>
+                <label>終了時刻</label>
                 <input
-                  type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  min="1"
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => handleEndTimeChange(e.target.value)}
                 />
               </div>
             </div>
+            {timeError && <p className="parent-form-error">{timeError}</p>}
+            {!timeError && startTime && endTime && (
+              <p className="parent-form-duration">
+                授業時間: {calculateDuration(startTime, endTime)}分
+              </p>
+            )}
             <div className="parent-form-group">
               <label>授業内容</label>
               <textarea
@@ -212,7 +283,10 @@ export const Parent: React.FC = () => {
                     <div className="parent-card-header">
                       <div>
                         <span className="parent-card-label">授業時間</span>
-                        <div className="parent-card-value">{lesson.duration}分</div>
+                        <div className="parent-card-value">{formatLessonTime(lesson)}</div>
+                        {lesson.startTime && lesson.endTime && (
+                          <span className="parent-card-duration">（{lesson.duration}分）</span>
+                        )}
                       </div>
                       <div className="parent-card-actions">
                         <button className="parent-edit-button" onClick={() => handleEdit(lesson)}>
