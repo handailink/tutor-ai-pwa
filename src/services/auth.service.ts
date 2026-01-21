@@ -89,14 +89,13 @@ export class AuthService {
   async logout(): Promise<void> {
     console.log('[AuthService] logout開始');
     if (isSupabaseConfigured() && supabase) {
-      // scope: 'local' でローカルセッションのみクリア
-      // サーバー側でセッションが見つからない場合のエラーを回避
-      const { error } = await supabase.auth.signOut({ scope: 'local' });
-      if (error) {
-        console.error('[AuthService] Supabaseログアウトエラー:', error.message);
-        // ローカルスコープでもエラーの場合は無視してローカルをクリア
+      try {
+        await supabase.auth.signOut();
+        console.log('[AuthService] Supabaseログアウト成功');
+      } catch (error) {
+        console.error('[AuthService] Supabaseログアウトエラー:', error);
+        // エラーでもローカルはクリアする
       }
-      console.log('[AuthService] Supabaseログアウト完了');
     }
     localStorage.removeItem(CURRENT_USER_KEY);
     console.log('[AuthService] LocalStorage削除完了');
