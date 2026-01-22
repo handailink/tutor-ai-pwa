@@ -1,11 +1,47 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { TestSetRepository } from '../repositories';
 import { ProjectService } from '../services';
-import { TestSetWithScores, Project } from '../types';
+import { TestSetWithScores, Project, Attachment } from '../types';
 import { generateId } from '../utils/id';
+import { uploadTestImage, createSignedUrl } from '../services/storage.service';
+import { isSupabaseConfigured } from '../lib/supabase';
 import './Tests.css';
+
+// 画像表示用コンポーネント（署名付きURL対応）
+const TestImage: React.FC<{ attachment: Attachment; alt: string }> = ({ attachment, alt }) => {
+  const [imageUrl, setImageUrl] = useState<string>(attachment.urlOrData || '');
+  const [loading, setLoading] = useState<boolean>(!attachment.urlOrData && !!attachment.path);
+
+  useEffect(() => {
+    // pathがある場合は署名付きURLを取得
+    if (attachment.path && !attachment.urlOrData) {
+      setLoading(true);
+      createSignedUrl(attachment.path)
+        .then((url) => {
+          setImageUrl(url);
+          setLoading(false);
+        })
+        .catch((err) => {
+          console.error('署名URL取得エラー:', err);
+          setLoading(false);
+        });
+    } else if (attachment.urlOrData) {
+      setImageUrl(attachment.urlOrData);
+    }
+  }, [attachment.path, attachment.urlOrData]);
+
+  if (loading) {
+    return <div className="tests-image-loading">読込中...</div>;
+  }
+
+  if (!imageUrl) {
+    return <div className="tests-image-error">画像を読み込めません</div>;
+  }
+
+  return <img src={imageUrl} alt={alt} />;
+};
 
 export const Tests: React.FC = () => {
   const { user } = useAuth();
@@ -71,7 +107,14 @@ export const Tests: React.FC = () => {
 
   const handleSave = async (
     data: { date: string; name: string; grade?: string; memo?: string },
-    scores: Array<{ subject: string; score: number; average?: number; maxScore?: number }>
+    scores: Array<{
+      subject: string;
+      score: number;
+      average?: number;
+      maxScore?: number;
+      problemImages?: Attachment[];
+      answerImages?: Attachment[];
+    }>
   ) => {
     if (!user) return;
     if (selectedSet) {
@@ -244,19 +287,49 @@ export const Tests: React.FC = () => {
               ) : (
                 <div className="tests-detail-score-list">
                   {getFilteredScores(selectedSet.scores).map((score) => (
-                    <div key={score.id} className="tests-detail-score">
-                      <div className="tests-detail-score-subject">{score.subject}</div>
-                      <div className="tests-detail-score-values">
-                        <span>
-                          {score.score}
-                          {score.maxScore ? `/${score.maxScore}` : ''}
-                        </span>
-                        {score.average !== undefined && (
-                          <span className="tests-detail-score-average">
-                            平均: {score.average}
+                    <div key={score.id} className="tests-detail-score-card">
+                      <div className="tests-detail-score-header">
+                        <div className="tests-detail-score-subject">{score.subject}</div>
+                        <div className="tests-detail-score-values">
+                          <span>
+                            {score.score}
+                            {score.maxScore ? `/${score.maxScore}` : ''}
                           </span>
-                        )}
+                          {score.average !== undefined && (
+                            <span className="tests-detail-score-average">
+                              平均: {score.average}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      
+                      {/* 問題の写真 */}
+                      {score.problemImages && score.problemImages.length > 0 && (
+                        <div className="tests-detail-images">
+                          <h4>問題</h4>
+                          <div className="tests-detail-image-grid">
+                            {score.problemImages.map((img) => (
+                              <div key={img.id} className="tests-detail-image-link">
+                                <TestImage attachment={img} alt={img.name || '問題'} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* 解答の写真 */}
+                      {score.answerImages && score.answerImages.length > 0 && (
+                        <div className="tests-detail-images">
+                          <h4>解答</h4>
+                          <div className="tests-detail-image-grid">
+                            {score.answerImages.map((img) => (
+                              <div key={img.id} className="tests-detail-image-link">
+                                <TestImage attachment={img} alt={img.name || '解答'} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -283,7 +356,14 @@ interface TestModalProps {
   projects: Project[];
   onSave: (
     data: { date: string; name: string; grade?: string; memo?: string },
-    scores: Array<{ subject: string; score: number; average?: number; maxScore?: number }>
+    scores: Array<{
+      subject: string;
+      score: number;
+      average?: number;
+      maxScore?: number;
+      problemImages?: Attachment[];
+      answerImages?: Attachment[];
+    }>
   ) => void;
   onClose: () => void;
 }
@@ -294,9 +374,12 @@ type ScoreInput = {
   score: string;
   maxScore: string;
   average: string;
+  problemImages: Attachment[];
+  answerImages: Attachment[];
 };
 
 const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClose }) => {
+  const { user } = useAuth();
   const [name, setName] = useState(testSet?.name || '');
   const [date, setDate] = useState(testSet?.date || '');
   const [grade, setGrade] = useState(testSet?.grade || '');
@@ -308,8 +391,16 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
       score: score.score.toString(),
       maxScore: score.maxScore ? score.maxScore.toString() : '',
       average: score.average !== undefined ? score.average.toString() : '',
+      problemImages: score.problemImages || [],
+      answerImages: score.answerImages || [],
     })) || []
   );
+  const [uploading, setUploading] = useState(false);
+  const problemInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const answerInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  
+  // テストセットID（新規作成時は仮ID）
+  const testSetId = testSet?.id || 'new-test';
 
   useEffect(() => {
     if (date || testSet) return;
@@ -318,14 +409,117 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
 
   useEffect(() => {
     if (scores.length > 0) return;
-    setScores([{ id: generateId(), subject: '', score: '', maxScore: '', average: '' }]);
+    setScores([{ id: generateId(), subject: '', score: '', maxScore: '', average: '', problemImages: [], answerImages: [] }]);
   }, [scores.length]);
 
   const handleAddScore = () => {
     setScores((prev) => [
       ...prev,
-      { id: generateId(), subject: '', score: '', maxScore: '', average: '' },
+      { id: generateId(), subject: '', score: '', maxScore: '', average: '', problemImages: [], answerImages: [] },
     ]);
+  };
+
+  // 画像アップロード処理（Supabase Storage使用）
+  const handleImageUpload = async (
+    scoreId: string,
+    type: 'problem' | 'answer',
+    files: FileList | null
+  ) => {
+    if (!files || files.length === 0) return;
+    
+    setUploading(true);
+    
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue;
+      
+      try {
+        // Supabase Storageが設定されている場合はStorageにアップロード
+        if (isSupabaseConfigured()) {
+          const result = await uploadTestImage(file, testSetId, user?.id);
+          const newAttachment: Attachment = {
+            id: generateId(),
+            type: 'image',
+            urlOrData: '', // 表示時に署名付きURLを取得
+            path: result.path,
+            name: result.name,
+            mime: result.mime,
+            size: result.size,
+          };
+          
+          // アップロード後すぐにプレビュー用の署名付きURLを取得
+          try {
+            const signedUrl = await createSignedUrl(result.path);
+            newAttachment.urlOrData = signedUrl;
+          } catch {
+            // 署名URL取得失敗時はBase64フォールバック
+            const dataUrl = await fileToDataUrl(file);
+            newAttachment.urlOrData = dataUrl;
+          }
+          
+          setScores((prev) =>
+            prev.map((score) => {
+              if (score.id !== scoreId) return score;
+              if (type === 'problem') {
+                return { ...score, problemImages: [...score.problemImages, newAttachment] };
+              } else {
+                return { ...score, answerImages: [...score.answerImages, newAttachment] };
+              }
+            })
+          );
+        } else {
+          // Supabase未設定時はBase64で保存（LocalStorage用）
+          const dataUrl = await fileToDataUrl(file);
+          const newAttachment: Attachment = {
+            id: generateId(),
+            type: 'image',
+            urlOrData: dataUrl,
+            name: file.name,
+            mime: file.type,
+            size: file.size,
+          };
+          
+          setScores((prev) =>
+            prev.map((score) => {
+              if (score.id !== scoreId) return score;
+              if (type === 'problem') {
+                return { ...score, problemImages: [...score.problemImages, newAttachment] };
+              } else {
+                return { ...score, answerImages: [...score.answerImages, newAttachment] };
+              }
+            })
+          );
+        }
+      } catch (error) {
+        console.error('画像アップロードエラー:', error);
+        alert('画像のアップロードに失敗しました');
+      }
+    }
+    
+    setUploading(false);
+  };
+  
+  // FileをDataURLに変換するヘルパー
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // 画像削除処理
+  const handleRemoveImage = (scoreId: string, type: 'problem' | 'answer', attachmentId: string) => {
+    setScores((prev) =>
+      prev.map((score) => {
+        if (score.id !== scoreId) return score;
+        if (type === 'problem') {
+          return { ...score, problemImages: score.problemImages.filter((img) => img.id !== attachmentId) };
+        } else {
+          return { ...score, answerImages: score.answerImages.filter((img) => img.id !== attachmentId) };
+        }
+      })
+    );
   };
 
   const handleRemoveScore = (id: string) => {
@@ -344,6 +538,8 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
         score: score.score.trim(),
         maxScore: score.maxScore.trim(),
         average: score.average.trim(),
+        problemImages: score.problemImages,
+        answerImages: score.answerImages,
       }))
       .filter((score) => score.subject && score.score);
 
@@ -351,6 +547,18 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
       alert('教科ごとの点数を入力してください');
       return;
     }
+
+    // 保存用に画像データを整理（Storageの場合はpathのみ、LocalStorageの場合はurlOrData）
+    const cleanAttachments = (attachments: Attachment[]): Attachment[] => {
+      return attachments.map((att) => {
+        if (att.path) {
+          // Storageに保存済み：pathのみ保持、urlOrDataは空に
+          return { ...att, urlOrData: '' };
+        }
+        // LocalStorage用：Base64をそのまま保持
+        return att;
+      });
+    };
 
     onSave(
       {
@@ -364,6 +572,8 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
         score: parseInt(score.score, 10),
         maxScore: score.maxScore ? parseInt(score.maxScore, 10) : undefined,
         average: score.average ? parseInt(score.average, 10) : undefined,
+        problemImages: cleanAttachments(score.problemImages),
+        answerImages: cleanAttachments(score.answerImages),
       }))
     );
   };
@@ -512,6 +722,80 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
                       />
                     </div>
                   </div>
+
+                  {/* 問題の写真 */}
+                  <div className="tests-form-group">
+                    <label>問題の写真（任意）</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      ref={(el) => { problemInputRefs.current[score.id] = el; }}
+                      onChange={(e) => handleImageUpload(score.id, 'problem', e.target.files)}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      type="button"
+                      className="tests-image-upload-button"
+                      onClick={() => problemInputRefs.current[score.id]?.click()}
+                    >
+                      📷 問題を追加
+                    </button>
+                    {score.problemImages.length > 0 && (
+                      <div className="tests-image-preview-list">
+                        {score.problemImages.map((img) => (
+                          <div key={img.id} className="tests-image-preview">
+                            <img src={img.urlOrData} alt={img.name || '問題'} />
+                            <button
+                              type="button"
+                              className="tests-image-remove"
+                              onClick={() => handleRemoveImage(score.id, 'problem', img.id)}
+                              aria-label="削除"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 解答の写真 */}
+                  <div className="tests-form-group">
+                    <label>解答の写真（任意）</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      ref={(el) => { answerInputRefs.current[score.id] = el; }}
+                      onChange={(e) => handleImageUpload(score.id, 'answer', e.target.files)}
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      type="button"
+                      className="tests-image-upload-button"
+                      onClick={() => answerInputRefs.current[score.id]?.click()}
+                    >
+                      📷 解答を追加
+                    </button>
+                    {score.answerImages.length > 0 && (
+                      <div className="tests-image-preview-list">
+                        {score.answerImages.map((img) => (
+                          <div key={img.id} className="tests-image-preview">
+                            <img src={img.urlOrData} alt={img.name || '解答'} />
+                            <button
+                              type="button"
+                              className="tests-image-remove"
+                              onClick={() => handleRemoveImage(score.id, 'answer', img.id)}
+                              aria-label="削除"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
               <button type="button" className="tests-score-add" onClick={handleAddScore}>
@@ -520,10 +804,12 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
             </div>
           </div>
           <div className="tests-modal-actions">
-            <button type="button" onClick={onClose}>
+            <button type="button" onClick={onClose} disabled={uploading}>
               キャンセル
             </button>
-            <button type="submit">保存</button>
+            <button type="submit" disabled={uploading}>
+              {uploading ? 'アップロード中...' : '保存'}
+            </button>
           </div>
         </form>
       </div>

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { TestSet, TestScore, TestSetWithScores } from '../types';
+import { TestSet, TestScore, TestSetWithScores, Attachment } from '../types';
 import { generateId } from '../utils/id';
 
 const STORAGE_KEY_SETS = 'tutor_ai_test_sets';
@@ -60,6 +60,8 @@ export class TestSetRepository {
             maxScore: s.max_score,
             rank: s.rank,
             deviation: s.deviation,
+            problemImages: s.problem_images || [],
+            answerImages: s.answer_images || [],
             createdAt: s.created_at,
           })),
         });
@@ -105,6 +107,8 @@ export class TestSetRepository {
           maxScore: s.max_score,
           rank: s.rank,
           deviation: s.deviation,
+          problemImages: s.problem_images || [],
+          answerImages: s.answer_images || [],
           createdAt: s.created_at,
         })),
       };
@@ -132,6 +136,8 @@ export class TestSetRepository {
       score: number;
       average?: number;
       maxScore?: number;
+      problemImages?: Attachment[];
+      answerImages?: Attachment[];
     }>
   ): Promise<TestSetWithScores> {
     const now = new Date().toISOString();
@@ -162,6 +168,8 @@ export class TestSetRepository {
           score: s.score,
           average: s.average,
           max_score: s.maxScore ?? 100,
+          problem_images: s.problemImages || [],
+          answer_images: s.answerImages || [],
         }));
 
         const { data: insertedScores, error: scoresError } = await supabase
@@ -191,6 +199,8 @@ export class TestSetRepository {
             maxScore: s.max_score,
             rank: s.rank,
             deviation: s.deviation,
+            problemImages: s.problem_images || [],
+            answerImages: s.answer_images || [],
             createdAt: s.created_at,
           })),
         };
@@ -218,6 +228,8 @@ export class TestSetRepository {
       score: number;
       average?: number;
       maxScore?: number;
+      problemImages?: Attachment[];
+      answerImages?: Attachment[];
     }>
   ): Promise<TestSetWithScores | null> {
     const now = new Date().toISOString();
@@ -258,6 +270,8 @@ export class TestSetRepository {
           score: s.score,
           average: s.average,
           max_score: s.maxScore ?? 100,
+          problem_images: s.problemImages || [],
+          answer_images: s.answerImages || [],
         }));
 
         const { data: insertedScores, error: scoresError } = await supabase
@@ -287,6 +301,8 @@ export class TestSetRepository {
             maxScore: s.max_score,
             rank: s.rank,
             deviation: s.deviation,
+            problemImages: s.problem_images || [],
+            answerImages: s.answer_images || [],
             createdAt: s.created_at,
           })),
         };
@@ -342,6 +358,8 @@ export class TestSetRepository {
       score: number;
       average?: number;
       maxScore?: number;
+      problemImages?: Attachment[];
+      answerImages?: Attachment[];
     }>,
     now: string
   ): TestSetWithScores {
@@ -363,6 +381,8 @@ export class TestSetRepository {
       score: s.score,
       average: s.average,
       maxScore: s.maxScore ?? 100,
+      problemImages: s.problemImages || [],
+      answerImages: s.answerImages || [],
       createdAt: now,
     }));
 
@@ -390,6 +410,8 @@ export class TestSetRepository {
       score: number;
       average?: number;
       maxScore?: number;
+      problemImages?: Attachment[];
+      answerImages?: Attachment[];
     }>,
     now: string
   ): TestSetWithScores | null {
@@ -416,6 +438,8 @@ export class TestSetRepository {
       score: s.score,
       average: s.average,
       maxScore: s.maxScore ?? 100,
+      problemImages: s.problemImages || [],
+      answerImages: s.answerImages || [],
       createdAt: now,
     }));
     allScores.push(...newScores);

@@ -192,3 +192,55 @@ export async function removeAttachment(path: string): Promise<void> {
 export function clearSignedUrlCache(): void {
   signedUrlCache.clear();
 }
+
+/**
+ * テスト画像をSupabase Storageにアップロード
+ * 
+ * @param file アップロードするファイル
+ * @param testSetId テストセットID（パス構成に使用）
+ * @param fallbackUserId フォールバック用のユーザーID
+ * @returns アップロード結果（path, mime, size, name）
+ */
+export async function uploadTestImage(
+  file: File,
+  testSetId: string,
+  fallbackUserId?: string
+): Promise<UploadResult> {
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase設定が未完了です。.env.local を確認してください。');
+  }
+
+  // ユーザーIDを取得
+  let userId = await getCurrentUserId();
+  if (!userId && fallbackUserId) {
+    userId = fallbackUserId;
+  }
+  if (!userId) {
+    throw new Error('ユーザーIDが取得できません。再ログインしてください。');
+  }
+  
+  // パス構成: {userId}/tests/{testSetId}/{timestamp}-{uniqueId}-{sanitizedName}
+  const timestamp = Date.now();
+  const uniqueId = generateId();
+  const sanitizedName = sanitizeFileName(file.name);
+  const path = `${userId}/tests/${testSetId}/${timestamp}-${uniqueId}-${sanitizedName}`;
+
+  const { error } = await supabase.storage
+    .from(SUPABASE_BUCKET)
+    .upload(path, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (error) {
+    console.error('[Storage] テスト画像アップロードエラー:', error);
+    throw new Error(`画像のアップロードに失敗しました: ${error.message}`);
+  }
+
+  return {
+    path,
+    mime: file.type,
+    size: file.size,
+    name: file.name,
+  };
+}

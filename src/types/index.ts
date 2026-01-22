@@ -101,6 +101,8 @@ export interface TestScore {
   maxScore: number;       // 満点（デフォルト100）
   rank?: number;          // 順位（任意）
   deviation?: number;     // 偏差値（任意）
+  problemImages?: Attachment[];  // 問題の写真（あとで見返す用）
+  answerImages?: Attachment[];   // 解答の写真（あとで見返す用）
   createdAt: string;
 }
 
