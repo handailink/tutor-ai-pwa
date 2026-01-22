@@ -10,7 +10,11 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import './Tests.css';
 
 // 画像表示用コンポーネント（署名付きURL対応）
-const TestImage: React.FC<{ attachment: Attachment; alt: string }> = ({ attachment, alt }) => {
+const TestImage: React.FC<{ 
+  attachment: Attachment; 
+  alt: string;
+  onClick?: (url: string) => void;
+}> = ({ attachment, alt, onClick }) => {
   const [imageUrl, setImageUrl] = useState<string>(attachment.urlOrData || '');
   const [loading, setLoading] = useState<boolean>(!attachment.urlOrData && !!attachment.path);
 
@@ -40,7 +44,39 @@ const TestImage: React.FC<{ attachment: Attachment; alt: string }> = ({ attachme
     return <div className="tests-image-error">画像を読み込めません</div>;
   }
 
-  return <img src={imageUrl} alt={alt} />;
+  return (
+    <img 
+      src={imageUrl} 
+      alt={alt} 
+      onClick={() => onClick?.(imageUrl)}
+      style={{ cursor: onClick ? 'pointer' : 'default' }}
+    />
+  );
+};
+
+// 画像拡大モーダル
+const ImageViewerModal: React.FC<{
+  imageUrl: string;
+  onClose: () => void;
+}> = ({ imageUrl, onClose }) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="tests-image-viewer-overlay" onClick={onClose}>
+      <button className="tests-image-viewer-close" onClick={onClose} aria-label="閉じる">
+        ×
+      </button>
+      <div className="tests-image-viewer-content" onClick={(e) => e.stopPropagation()}>
+        <img src={imageUrl} alt="拡大画像" />
+      </div>
+    </div>
+  );
 };
 
 export const Tests: React.FC = () => {
@@ -51,6 +87,7 @@ export const Tests: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedSet, setSelectedSet] = useState<TestSetWithScores | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'detail'>('list');
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   const testRepository = useMemo(() => new TestSetRepository(), []);
   const projectService = useMemo(() => new ProjectService(), []);
@@ -310,7 +347,11 @@ export const Tests: React.FC = () => {
                           <div className="tests-detail-image-grid">
                             {score.problemImages.map((img) => (
                               <div key={img.id} className="tests-detail-image-link">
-                                <TestImage attachment={img} alt={img.name || '問題'} />
+                                <TestImage 
+                                  attachment={img} 
+                                  alt={img.name || '問題'} 
+                                  onClick={(url) => setViewerImage(url)}
+                                />
                               </div>
                             ))}
                           </div>
@@ -324,7 +365,11 @@ export const Tests: React.FC = () => {
                           <div className="tests-detail-image-grid">
                             {score.answerImages.map((img) => (
                               <div key={img.id} className="tests-detail-image-link">
-                                <TestImage attachment={img} alt={img.name || '解答'} />
+                                <TestImage 
+                                  attachment={img} 
+                                  alt={img.name || '解答'} 
+                                  onClick={(url) => setViewerImage(url)}
+                                />
                               </div>
                             ))}
                           </div>
@@ -345,6 +390,13 @@ export const Tests: React.FC = () => {
           projects={projects}
           onSave={handleSave}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {viewerImage && (
+        <ImageViewerModal
+          imageUrl={viewerImage}
+          onClose={() => setViewerImage(null)}
         />
       )}
     </div>
@@ -396,6 +448,7 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
     })) || []
   );
   const [uploading, setUploading] = useState(false);
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
   const problemInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
   const answerInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
   
@@ -419,6 +472,16 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
     ]);
   };
 
+  // FileをDataURLに変換するヘルパー
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   // 画像アップロード処理（Supabase Storage使用）
   const handleImageUpload = async (
     scoreId: string,
@@ -432,44 +495,27 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue;
       
+      // まずBase64でプレビュー用のURLを取得（即座に表示用）
+      const dataUrl = await fileToDataUrl(file);
+      
       try {
+        let newAttachment: Attachment;
+        
         // Supabase Storageが設定されている場合はStorageにアップロード
         if (isSupabaseConfigured()) {
           const result = await uploadTestImage(file, testSetId, user?.id);
-          const newAttachment: Attachment = {
+          newAttachment = {
             id: generateId(),
             type: 'image',
-            urlOrData: '', // 表示時に署名付きURLを取得
-            path: result.path,
+            urlOrData: dataUrl, // プレビュー用にBase64を使用
+            path: result.path,  // 保存用にpathを記録
             name: result.name,
             mime: result.mime,
             size: result.size,
           };
-          
-          // アップロード後すぐにプレビュー用の署名付きURLを取得
-          try {
-            const signedUrl = await createSignedUrl(result.path);
-            newAttachment.urlOrData = signedUrl;
-          } catch {
-            // 署名URL取得失敗時はBase64フォールバック
-            const dataUrl = await fileToDataUrl(file);
-            newAttachment.urlOrData = dataUrl;
-          }
-          
-          setScores((prev) =>
-            prev.map((score) => {
-              if (score.id !== scoreId) return score;
-              if (type === 'problem') {
-                return { ...score, problemImages: [...score.problemImages, newAttachment] };
-              } else {
-                return { ...score, answerImages: [...score.answerImages, newAttachment] };
-              }
-            })
-          );
         } else {
           // Supabase未設定時はBase64で保存（LocalStorage用）
-          const dataUrl = await fileToDataUrl(file);
-          const newAttachment: Attachment = {
+          newAttachment = {
             id: generateId(),
             type: 'image',
             urlOrData: dataUrl,
@@ -477,18 +523,18 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
             mime: file.type,
             size: file.size,
           };
-          
-          setScores((prev) =>
-            prev.map((score) => {
-              if (score.id !== scoreId) return score;
-              if (type === 'problem') {
-                return { ...score, problemImages: [...score.problemImages, newAttachment] };
-              } else {
-                return { ...score, answerImages: [...score.answerImages, newAttachment] };
-              }
-            })
-          );
         }
+        
+        setScores((prev) =>
+          prev.map((score) => {
+            if (score.id !== scoreId) return score;
+            if (type === 'problem') {
+              return { ...score, problemImages: [...score.problemImages, newAttachment] };
+            } else {
+              return { ...score, answerImages: [...score.answerImages, newAttachment] };
+            }
+          })
+        );
       } catch (error) {
         console.error('画像アップロードエラー:', error);
         alert('画像のアップロードに失敗しました');
@@ -496,16 +542,6 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
     }
     
     setUploading(false);
-  };
-  
-  // FileをDataURLに変換するヘルパー
-  const fileToDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   };
 
   // 画像削除処理
@@ -745,7 +781,12 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
                       <div className="tests-image-preview-list">
                         {score.problemImages.map((img) => (
                           <div key={img.id} className="tests-image-preview">
-                            <img src={img.urlOrData} alt={img.name || '問題'} />
+                            <img 
+                              src={img.urlOrData} 
+                              alt={img.name || '問題'} 
+                              onClick={() => img.urlOrData && setViewerImage(img.urlOrData)}
+                              style={{ cursor: 'pointer' }}
+                            />
                             <button
                               type="button"
                               className="tests-image-remove"
@@ -782,7 +823,12 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
                       <div className="tests-image-preview-list">
                         {score.answerImages.map((img) => (
                           <div key={img.id} className="tests-image-preview">
-                            <img src={img.urlOrData} alt={img.name || '解答'} />
+                            <img 
+                              src={img.urlOrData} 
+                              alt={img.name || '解答'} 
+                              onClick={() => img.urlOrData && setViewerImage(img.urlOrData)}
+                              style={{ cursor: 'pointer' }}
+                            />
                             <button
                               type="button"
                               className="tests-image-remove"
@@ -812,6 +858,13 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
             </button>
           </div>
         </form>
+
+        {viewerImage && (
+          <ImageViewerModal
+            imageUrl={viewerImage}
+            onClose={() => setViewerImage(null)}
+          />
+        )}
       </div>
     </div>
   );
