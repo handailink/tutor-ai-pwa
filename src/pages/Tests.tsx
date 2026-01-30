@@ -781,11 +781,10 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
                       <div className="tests-image-preview-list">
                         {score.problemImages.map((img) => (
                           <div key={img.id} className="tests-image-preview">
-                            <img 
-                              src={img.urlOrData} 
+                            <TestImage 
+                              attachment={img} 
                               alt={img.name || '問題'} 
-                              onClick={() => img.urlOrData && setViewerImage(img.urlOrData)}
-                              style={{ cursor: 'pointer' }}
+                              onClick={(url) => setViewerImage(url)}
                             />
                             <button
                               type="button"
@@ -823,11 +822,10 @@ const TestModal: React.FC<TestModalProps> = ({ testSet, projects, onSave, onClos
                       <div className="tests-image-preview-list">
                         {score.answerImages.map((img) => (
                           <div key={img.id} className="tests-image-preview">
-                            <img 
-                              src={img.urlOrData} 
+                            <TestImage 
+                              attachment={img} 
                               alt={img.name || '解答'} 
-                              onClick={() => img.urlOrData && setViewerImage(img.urlOrData)}
-                              style={{ cursor: 'pointer' }}
+                              onClick={(url) => setViewerImage(url)}
                             />
                             <button
                               type="button"
